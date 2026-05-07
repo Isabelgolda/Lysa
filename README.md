@@ -2,8 +2,6 @@
 
 **A browser-based microscopy image viewer and analysis tool.**
 
-Lysa (Swedish for "to shine") is a lightweight, locally-hosted application for viewing, adjusting, and analyzing microscopy images. It runs as a Python server with a web-based frontend — no Electron, no cloud, no account required.
-
 Originally created by **Prashanth Ramachandran**, who initiated the development, named the project, and designed its identity.
 
 ## Features
