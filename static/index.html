@@ -1,0 +1,3973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lysa - Microscopy Image Viewer & Analysis</title>
+    <link rel="icon" type="image/svg+xml" href="/static/lysa_favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Jura:wght@300;400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #0f1525;
+            --bg-panel: #131a2e;
+            --bg-card: #151c30;
+            --accent: #4ecdc4;
+            --accent-hover: #6ee0d8;
+            --text-primary: #e4e8ee;
+            --text-secondary: #8296aa;
+            --border: #1e2a40;
+            --success: #4ecdc4;
+            --warning: #f0c27a;
+            --slider-track: #1e2a40;
+            --slider-thumb: #4ecdc4;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Jura', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- Top Bar --- */
+        .topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+            padding: 0 16px; height: 48px; z-index: 100;
+        }
+        .topbar-logo {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 18px; font-weight: 300; color: var(--text-primary); letter-spacing: 4px;
+        }
+        .topbar-logo svg { width: 28px; height: 28px; }
+        .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+        /* --- Buttons --- */
+        .btn {
+            padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+            background: var(--bg-panel); color: var(--text-primary); cursor: pointer;
+            font-size: 13px; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { background: var(--border); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* --- Layout --- */
+        .main-layout { display: flex; height: calc(100vh - 48px); }
+
+        /* --- Sidebar --- */
+        .sidebar {
+            width: 260px; min-width: 180px; max-width: 800px; background: var(--bg-secondary);
+            border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
+            position: relative; flex-shrink: 0;
+        }
+        .sidebar-resize-handle {
+            position: absolute; top: 0; right: -3px; width: 6px; height: 100%;
+            cursor: col-resize; z-index: 50; background: transparent;
+            transition: background 0.15s;
+        }
+        .sidebar-resize-handle:hover, .sidebar-resize-handle.active {
+            background: var(--accent);
+        }
+        body.resizing-sidebar { cursor: col-resize; user-select: none; }
+        body.resizing-sidebar * { cursor: col-resize !important; }
+        /* When the sidebar is wide, let card filenames wrap onto multiple lines */
+        .sidebar.wide .image-card-info .name { white-space: normal; word-break: break-word; }
+        .sidebar-section { padding: 12px; border-bottom: 1px solid var(--border); }
+        .sidebar-section h3 {
+            font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+            color: var(--text-secondary); margin-bottom: 8px;
+        }
+        .image-library { flex: 1; overflow-y: auto; padding: 8px; }
+        .image-library::-webkit-scrollbar { width: 6px; }
+        .image-library::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .folder-group { margin-bottom: 6px; }
+        .folder-header {
+            display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+            font-size: 12px; font-weight: 600; color: var(--text-primary);
+            background: var(--bg-secondary); border-radius: 6px; cursor: pointer;
+            user-select: none; border: 1px solid transparent;
+        }
+        .folder-header:hover { background: var(--bg-panel); }
+        .folder-header.drag-over { border-color: var(--accent); background: rgba(78,205,196,0.12); }
+        .folder-header .folder-caret { display:inline-block; width: 10px; text-align: center; color: var(--text-secondary); transition: transform 0.15s; }
+        .folder-header.collapsed .folder-caret { transform: rotate(-90deg); }
+        .folder-header .folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .folder-header .folder-count { font-size: 10px; color: var(--text-secondary); font-weight: 400; }
+        .folder-header .folder-actions { display: none; gap: 2px; }
+        .folder-header:hover .folder-actions { display: flex; }
+        .folder-header .folder-actions button {
+            background: none; border: none; color: var(--text-secondary); cursor: pointer;
+            padding: 0 4px; font-size: 12px; border-radius: 3px;
+        }
+        .folder-header .folder-actions button:hover { color: var(--accent); background: rgba(78,205,196,0.15); }
+        .folder-children { margin-left: 12px; padding-left: 4px; border-left: 1px dashed var(--border); margin-top: 2px; }
+        .image-card[draggable="true"] { -webkit-user-drag: element; }
+        .image-card.dragging { opacity: 0.5; }
+        .root-drop-zone {
+            margin-top: 6px; padding: 6px 8px; font-size: 11px; color: var(--text-secondary);
+            text-align: center; border: 1px dashed transparent; border-radius: 6px;
+        }
+        .root-drop-zone.drag-over { border-color: var(--accent); background: rgba(78,205,196,0.08); color: var(--accent); }
+
+        .image-card {
+            display: flex; align-items: center; gap: 10px; padding: 8px;
+            border-radius: 8px; cursor: pointer; transition: background 0.15s; margin-bottom: 4px;
+        }
+        .image-card:hover { background: var(--bg-panel); }
+        .image-card.active { background: var(--bg-panel); border-left: 3px solid var(--accent); }
+        .image-card img {
+            width: 48px; height: 48px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border);
+        }
+        .image-card-info { flex: 1; min-width: 0; }
+        .image-card-info .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .image-card-info .meta { font-size: 11px; color: var(--text-secondary); }
+        .image-card .close-btn { opacity: 0; font-size: 16px; color: var(--text-secondary); cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+        .image-card:hover .close-btn { opacity: 1; }
+        .image-card .close-btn:hover { color: var(--accent); background: rgba(78,205,196,0.15); }
+
+        /* --- Upload Zone --- */
+        .upload-zone {
+            border: 2px dashed var(--border); border-radius: 8px; padding: 20px;
+            text-align: center; cursor: pointer; transition: all 0.2s;
+            color: var(--text-secondary); font-size: 13px;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--accent); background: rgba(78,205,196,0.05); color: var(--text-primary);
+        }
+
+        /* --- Viewer Area --- */
+        .viewer-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* --- View Tab Bar --- */
+        .view-tab-bar {
+            display: flex; align-items: center; background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border); min-height: 32px;
+            overflow-x: auto; flex-shrink: 0;
+        }
+        .view-tab-bar::-webkit-scrollbar { height: 3px; }
+        .view-tab-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .view-tab {
+            display: flex; align-items: center; gap: 6px; padding: 6px 14px;
+            font-size: 12px; color: var(--text-secondary); cursor: pointer;
+            border-right: 1px solid var(--border); white-space: nowrap;
+            transition: background 0.15s, color 0.15s; user-select: none;
+        }
+        .view-tab:hover { background: var(--bg-panel); color: var(--text-primary); }
+        .view-tab.active {
+            background: #111; color: var(--text-primary); font-weight: 500;
+            border-bottom: 2px solid var(--accent); margin-bottom: -1px;
+        }
+        .view-tab .tab-close {
+            opacity: 0; font-size: 14px; padding: 0 2px; border-radius: 3px;
+            color: var(--text-secondary); cursor: pointer; line-height: 1;
+        }
+        .view-tab:hover .tab-close { opacity: 0.7; }
+        .view-tab .tab-close:hover { opacity: 1; color: var(--accent); background: rgba(78,205,196,0.15); }
+
+        /* --- Canvas Container --- */
+        .canvas-area {
+            flex: 1; position: relative; overflow: hidden; background: #111;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .canvas-area canvas { image-rendering: pixelated; cursor: crosshair; }
+        .empty-state { text-align: center; color: var(--text-secondary); }
+        .empty-state svg { margin-bottom: 16px; opacity: 0.4; }
+        .empty-state p { font-size: 14px; margin-bottom: 8px; }
+        .empty-state .hint { font-size: 12px; opacity: 0.6; }
+
+        /* --- Bottom Info Bar --- */
+        .info-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 4px 12px; background: var(--bg-secondary); border-top: 1px solid var(--border);
+            font-size: 11px; color: var(--text-secondary); height: 28px;
+        }
+        .info-bar .coords { font-family: 'Consolas', 'Courier New', monospace; }
+        .zoom-controls { display: flex; align-items: center; gap: 6px; }
+        .zoom-controls button { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px; padding: 0 4px; }
+        .zoom-controls button:hover { color: var(--text-primary); }
+
+        /* --- Right Panel --- */
+        .right-panel {
+            width: 320px; min-width: 320px; background: var(--bg-secondary);
+            border-left: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column;
+        }
+        .right-panel::-webkit-scrollbar { width: 6px; }
+        .right-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .panel-section { padding: 14px; border-bottom: 1px solid var(--border); }
+        .panel-section h3 {
+            font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px;
+            color: var(--text-secondary); margin-bottom: 12px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .panel-section h3 .reset-btn {
+            font-size: 11px; color: var(--accent); cursor: pointer;
+            text-transform: none; letter-spacing: normal; font-weight: normal;
+        }
+        .panel-section h3 .reset-btn:hover { text-decoration: underline; }
+
+        /* --- Collapsible sections --- */
+        .panel-section.collapsed .section-body { display: none; }
+        .panel-section h3 { cursor: pointer; user-select: none; }
+        .panel-section h3 .collapse-icon { transition: transform 0.2s; font-size: 10px; margin-right: 6px; }
+        .panel-section.collapsed h3 .collapse-icon { transform: rotate(-90deg); }
+
+        /* --- Sliders --- */
+        .slider-group { margin-bottom: 10px; }
+        .slider-group label {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;
+        }
+        .slider-group label .value {
+            font-family: 'Consolas', monospace; color: var(--text-primary);
+            font-size: 11px; background: var(--bg-primary); padding: 1px 6px; border-radius: 3px;
+        }
+        input[type="range"] {
+            width: 100%; -webkit-appearance: none; height: 4px;
+            background: var(--slider-track); border-radius: 2px; outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+            background: var(--slider-thumb); cursor: pointer; transition: transform 0.1s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+        /* --- Dual range slider (contrast limits) --- */
+        .dual-range-container { position: relative; height: 20px; margin-bottom: 8px; }
+        .dual-range-container input[type="range"] { position: absolute; width: 100%; pointer-events: none; background: transparent; height: 4px; top: 8px; }
+        .dual-range-container input[type="range"]::-webkit-slider-thumb { pointer-events: auto; }
+        .dual-range-track {
+            position: absolute; height: 4px; background: var(--accent); top: 8px;
+            border-radius: 2px; pointer-events: none;
+        }
+
+        /* --- Channel Toggles --- */
+        .channel-toggles { display: flex; gap: 6px; flex-wrap: wrap; }
+        .channel-toggle {
+            padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;
+            border: 1px solid; transition: all 0.15s; font-weight: 500;
+        }
+        .channel-toggle.red { border-color: #e74c3c; color: #e74c3c; }
+        .channel-toggle.red.active { background: #e74c3c; color: white; }
+        .channel-toggle.green { border-color: #2ecc71; color: #2ecc71; }
+        .channel-toggle.green.active { background: #2ecc71; color: white; }
+        .channel-toggle.blue { border-color: #3498db; color: #3498db; }
+        .channel-toggle.blue.active { background: #3498db; color: white; }
+
+        /* --- Histogram --- */
+        .histogram-container {
+            background: var(--bg-primary); border-radius: 6px; padding: 8px;
+            height: 120px; position: relative;
+        }
+        .histogram-container canvas { width: 100%; height: 100%; }
+
+        /* --- Tools Bar --- */
+        .tools-bar { display: flex; gap: 4px; flex-wrap: wrap; }
+        .tool-btn {
+            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary);
+            color: var(--text-secondary); cursor: pointer; transition: all 0.15s; font-size: 14px;
+        }
+        .tool-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+        .tool-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+        /* --- Metadata --- */
+        .metadata-table { width: 100%; font-size: 12px; }
+        .metadata-table tr td { padding: 3px 0; }
+        .metadata-table tr td:first-child { color: var(--text-secondary); width: 100px; }
+        .metadata-table tr td:last-child { color: var(--text-primary); text-align: right; }
+
+        /* --- Grid View --- */
+        .grid-view { display: grid; gap: 2px; width: 100%; height: 100%; background: #000; }
+        .grid-cell {
+            position: relative; overflow: hidden; background: #111;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .grid-cell canvas { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+        .grid-cell-label {
+            position: absolute; top: 6px; left: 8px; font-size: 11px;
+            background: rgba(0,0,0,0.7); padding: 2px 8px; border-radius: 4px;
+            color: var(--text-primary); z-index: 10;
+        }
+        .grid-cell-close {
+            position: absolute; top: 6px; right: 8px; z-index: 10;
+            width: 22px; height: 22px; border-radius: 50%;
+            background: rgba(0,0,0,0.7); color: var(--text-secondary);
+            border: none; cursor: pointer; font-size: 14px; line-height: 22px;
+            text-align: center; padding: 0; opacity: 0; transition: opacity 0.15s;
+        }
+        .grid-cell:hover .grid-cell-close { opacity: 1; }
+        .grid-cell-close:hover { background: rgba(231,76,60,0.9); color: white; }
+        .grid-cell.active-cell { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+        /* --- View toggle --- */
+        .view-toggle { display: flex; gap: 2px; }
+        .view-toggle button {
+            padding: 4px 10px; border: 1px solid var(--border); background: var(--bg-primary);
+            color: var(--text-secondary); cursor: pointer; font-size: 12px;
+        }
+        .view-toggle button:first-child { border-radius: 4px 0 0 4px; }
+        .view-toggle button:last-child { border-radius: 0 4px 4px 0; }
+        .view-toggle button.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* --- Select --- */
+        select {
+            background: var(--bg-primary); color: var(--text-primary);
+            border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; font-size: 12px;
+            width: 100%;
+        }
+
+        /* --- Toggle --- */
+        .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 8px; }
+        .toggle-switch { position: relative; width: 36px; height: 20px; }
+        .toggle-switch input { display: none; }
+        .toggle-switch .slider {
+            position: absolute; inset: 0; background: var(--slider-track);
+            border-radius: 10px; cursor: pointer; transition: background 0.2s;
+        }
+        .toggle-switch .slider:before {
+            content: ''; position: absolute; width: 16px; height: 16px; left: 2px; bottom: 2px;
+            background: white; border-radius: 50%; transition: transform 0.2s;
+        }
+        .toggle-switch input:checked + .slider { background: var(--accent); }
+        .toggle-switch input:checked + .slider:before { transform: translateX(16px); }
+
+        /* --- Colormap preview --- */
+        .colormap-preview {
+            height: 16px; border-radius: 3px; margin-top: 6px; width: 100%;
+        }
+        .colormap-row {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+        }
+        .colormap-row select { flex: 1; }
+
+        /* --- Auto-contrast buttons --- */
+        .auto-contrast-row { display: flex; gap: 6px; margin-bottom: 10px; }
+        .auto-contrast-row button {
+            flex: 1; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px;
+            background: var(--bg-primary); color: var(--text-secondary); cursor: pointer;
+            font-size: 11px; transition: all 0.15s;
+        }
+        .auto-contrast-row button:hover { border-color: var(--accent); color: var(--text-primary); }
+        .auto-contrast-row button.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* --- Merge selection mode --- */
+        .merge-banner {
+            display: none;
+            background: linear-gradient(90deg, #131a2e, #0f1525);
+            border-bottom: 2px solid var(--accent);
+            padding: 8px 16px;
+            font-size: 13px;
+            color: var(--text-primary);
+            align-items: center;
+            justify-content: space-between;
+            z-index: 90;
+        }
+        .merge-banner.active { display: flex; }
+        .merge-banner .merge-status { display: flex; align-items: center; gap: 12px; }
+        .merge-banner .sel-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--bg-primary); padding: 3px 10px; border-radius: 12px;
+            font-size: 12px; border: 1px solid var(--border);
+        }
+        .merge-banner .sel-badge.filled { border-color: var(--accent); color: var(--accent); }
+        .merge-banner .sel-badge .dot {
+            width: 8px; height: 8px; border-radius: 50%; background: var(--border);
+        }
+        .merge-banner .sel-badge.filled .dot { background: var(--accent); }
+        .grid-cell[draggable="true"] { -webkit-user-drag: element; }
+        .grid-cell.drag-over-left  { box-shadow: inset 4px 0 0 0 var(--accent); }
+        .grid-cell.drag-over-right { box-shadow: inset -4px 0 0 0 var(--accent); }
+        .grid-cell.dragging { opacity: 0.4; }
+        .grid-cell.merge-selectable { cursor: pointer; }
+        .grid-cell.merge-selected {
+            outline: 3px solid var(--success) !important; outline-offset: -3px;
+        }
+        .grid-cell.merge-selected .grid-cell-label {
+            background: var(--success); color: #000; font-weight: 600;
+        }
+        .image-card.merge-selectable { cursor: pointer; }
+        .image-card.merge-selected {
+            background: rgba(46, 204, 113, 0.15) !important;
+            border-left: 3px solid var(--success) !important;
+        }
+
+        /* --- Modal --- */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+            z-index: 200; align-items: center; justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: 12px; padding: 24px; width: 480px; max-width: 90vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+        .modal h2 {
+            font-size: 16px; font-weight: 600; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .modal h2 svg { color: var(--accent); }
+        .modal-body { margin-bottom: 20px; }
+        .modal-row {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+        }
+        .modal-row label {
+            font-size: 12px; color: var(--text-secondary); min-width: 90px;
+        }
+        .modal-row select, .modal-row input[type="range"] { flex: 1; }
+        .modal-row .value {
+            font-family: 'Consolas', monospace; font-size: 11px; min-width: 36px;
+            text-align: right; color: var(--text-primary);
+        }
+        .merge-preview-container {
+            display: flex; gap: 8px; margin-bottom: 16px; align-items: center;
+            justify-content: center;
+        }
+        .merge-preview-container img, .merge-preview-container canvas {
+            width: 120px; height: 120px; object-fit: contain;
+            border: 1px solid var(--border); border-radius: 6px; background: #000;
+        }
+        .merge-preview-arrow {
+            font-size: 20px; color: var(--text-secondary);
+        }
+        .merge-ch-row {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+            padding: 8px; background: var(--bg-primary); border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+        .merge-ch-row .ch-thumb {
+            width: 48px; height: 48px; object-fit: contain; border-radius: 4px;
+            border: 1px solid var(--border); background: #000;
+        }
+        .merge-ch-row .ch-name {
+            font-size: 11px; color: var(--text-secondary); min-width: 80px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .merge-ch-row select, .merge-ch-row input[type="range"] { flex: 1; }
+        .merge-ch-row .ch-weight-val {
+            font-family: 'Consolas', monospace; font-size: 11px; min-width: 36px;
+            text-align: right; color: var(--text-primary);
+        }
+        /* Folder drop zone */
+        /* Eye toggle on sidebar cards */
+        .image-card .eye-toggle {
+            opacity: 0.5; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+            font-size: 14px; line-height: 1; color: var(--text-secondary);
+            transition: opacity 0.15s;
+        }
+        .image-card:hover .eye-toggle { opacity: 1; }
+        .image-card .eye-toggle.visible { opacity: 0.9; color: var(--accent); }
+        .image-card .eye-toggle:hover { background: rgba(78,205,196,0.1); }
+        .folder-drop-zone {
+            border: 2px dashed var(--border); border-radius: 8px; padding: 12px;
+            text-align: center; color: var(--text-secondary); font-size: 11px;
+            margin-top: 6px; cursor: pointer; transition: all 0.2s;
+        }
+        .folder-drop-zone.dragover {
+            border-color: var(--accent); background: rgba(78, 205, 196, 0.08);
+            color: var(--accent);
+        }
+        .modal-actions {
+            display: flex; gap: 8px; justify-content: flex-end;
+        }
+
+        /* --- Scrollbar --- */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+    <div class="topbar-logo">
+        <svg viewBox="0 0 64 64" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="32" cy="32" r="10" stroke="#4ecdc4" stroke-width="1.2" opacity="0.9"/>
+            <circle cx="32" cy="32" r="15" stroke="#4ecdc4" stroke-width="1.0" opacity="0.75"/>
+            <circle cx="32" cy="32" r="20" stroke="#4ecdc4" stroke-width="0.8" opacity="0.6"/>
+            <circle cx="32" cy="32" r="24.5" stroke="#4ecdc4" stroke-width="0.7" opacity="0.45"/>
+            <line x1="32" y1="28" x2="32" y2="5" stroke="#4ecdc4" stroke-width="0.6" opacity="0.4"/>
+            <line x1="32" y1="36" x2="32" y2="59" stroke="#4ecdc4" stroke-width="0.6" opacity="0.4"/>
+            <line x1="28" y1="32" x2="5" y2="32" stroke="#4ecdc4" stroke-width="0.6" opacity="0.4"/>
+            <line x1="36" y1="32" x2="59" y2="32" stroke="#4ecdc4" stroke-width="0.6" opacity="0.4"/>
+            <circle cx="32" cy="32" r="2" fill="#4ecdc4"/>
+            <circle cx="32" cy="32" r="0.8" fill="#ffffff" opacity="0.7"/>
+        </svg>
+        <span style="font-family: 'Jura', 'Segoe UI', sans-serif; font-weight: 300; letter-spacing: 4px; font-size: 18px;">lysa</span>
+    </div>
+    <div class="topbar-actions">
+        <div style="display:flex; align-items:center; gap:6px;">
+            <label style="font-size:12px; color:var(--text-secondary);">Parallel Views:</label>
+            <div style="display:flex; align-items:center; gap:2px;">
+                <button class="btn btn-sm" onclick="changeParallelViews(-1)" style="padding:4px 8px;">-</button>
+                <span id="parallelViewCount" style="font-size:14px; font-weight:600; min-width:24px; text-align:center;">1</span>
+                <button class="btn btn-sm" onclick="changeParallelViews(1)" style="padding:4px 8px;">+</button>
+            </div>
+        </div>
+        <select id="gridLayout" style="width:90px;" onchange="onLayoutChange()">
+            <option value="auto">Auto</option>
+            <option value="row">Side by Side</option>
+            <option value="col">Stacked</option>
+            <option value="grid">Grid</option>
+        </select>
+        <button class="btn" id="mergeBtn" onclick="toggleMergeSelect()" title="Select images to merge channels">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="6" opacity="0.6"/><circle cx="15" cy="12" r="6" opacity="0.6"/></svg>
+            Merge
+        </button>
+        <button class="btn" onclick="saveSessionPrompt()" title="Save current images, adjustments, and grid layout">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Session
+        </button>
+        <button class="btn" onclick="openSessionLoadDialog()" title="Restore a previously saved session">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z" opacity="0.4"/><polyline points="9 12 12 15 15 12"/><line x1="12" y1="6" x2="12" y2="15"/></svg>
+            Load Session
+        </button>
+        <button class="btn" onclick="exportToPDF()" title="Export visible grid images to a PDF at full resolution">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Export PDF
+        </button>
+        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Open Images
+        </button>
+        <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.lif" style="display:none" onchange="handleFileUpload(this.files)">
+    </div>
+</div>
+
+<!-- Merge selection banner -->
+<div class="merge-banner" id="mergeBanner">
+    <div class="merge-status">
+        <span>Select images to merge:</span>
+        <span id="mergeBadges" style="display:inline-flex; gap:6px; flex-wrap:wrap;"></span>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <span id="mergeSelCount" style="font-size:11px; color:var(--text-secondary);"></span>
+        <button class="btn btn-sm btn-primary" id="mergeDoneBtn" onclick="openMergeModal()" style="display:none;">Merge Selected</button>
+        <button class="btn btn-sm" onclick="cancelMergeSelect()">Cancel</button>
+    </div>
+</div>
+
+<!-- Merge modal (dynamic N-channel) -->
+<div class="modal-overlay" id="mergeModal">
+    <div class="modal" style="width:560px;">
+        <h2>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="6" opacity="0.6"/><circle cx="15" cy="12" r="6" opacity="0.6"/></svg>
+            Merge Channels
+        </h2>
+        <div class="modal-body">
+            <div class="merge-preview-container" id="mergePreviewContainer"></div>
+            <div id="mergeChannelRows" style="max-height:300px; overflow-y:auto;"></div>
+
+            <div class="modal-row" style="margin-top:14px;">
+                <label>Blend mode:</label>
+                <select id="mergeBlendMode" onchange="updateMergePreview()">
+                    <option value="additive" selected>Additive (sum)</option>
+                    <option value="max">Maximum</option>
+                    <option value="average">Average (overlap)</option>
+                </select>
+            </div>
+
+            <div class="modal-row">
+                <label>Output name:</label>
+                <input type="text" id="mergeName" placeholder="Auto" style="flex:1; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); padding:4px 8px; border-radius:4px; font-size:12px;">
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn" onclick="closeMergeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="executeMerge()">Merge Images</button>
+        </div>
+    </div>
+</div>
+
+<!-- Load Session modal -->
+<div class="modal-overlay" id="loadSessionModal">
+    <div class="modal" style="width:480px;">
+        <h2>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z" opacity="0.4"/><polyline points="9 12 12 15 15 12"/><line x1="12" y1="6" x2="12" y2="15"/></svg>
+            Load Session
+        </h2>
+        <div class="modal-body">
+            <div id="sessionListContainer" style="max-height:340px; overflow-y:auto;">
+                <div style="color:var(--text-secondary); font-size:12px; padding:12px; text-align:center;">Loading sessions…</div>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn" onclick="document.getElementById('loadSessionModal').classList.remove('active')">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Main Layout -->
+<div class="main-layout">
+    <!-- Left Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-resize-handle" id="sidebarResizeHandle" title="Drag to resize sidebar"></div>
+        <div class="sidebar-section">
+            <h3 style="display:flex; align-items:center; justify-content:space-between;">
+                Image Library
+                <span style="display:flex; gap:4px;">
+                    <button class="btn btn-sm" onclick="createFolder()" style="font-size:10px; padding:2px 6px;" title="Create a new folder">+ Folder</button>
+                    <button class="btn btn-sm" onclick="sortLibraryByName()" style="font-size:10px; padding:2px 6px;" title="Sort all images alphabetically by name">A-Z</button>
+                    <button class="btn btn-sm" onclick="showAllImages()" style="font-size:10px; padding:2px 6px;" title="Show all images in grid">All</button>
+                    <button class="btn btn-sm" onclick="hideAllImages()" style="font-size:10px; padding:2px 6px;" title="Hide all images from grid">None</button>
+                </span>
+            </h3>
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                <br>Drop images here<br>or click to browse
+            </div>
+            <div class="folder-drop-zone" id="folderDropZone">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:2px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <br>Drop a folder here to load all images
+            </div>
+            <div style="margin-top:8px; display:flex; gap:4px;">
+                <button class="btn btn-sm" onclick="showFolderDialog()" style="flex:1; font-size:11px;" title="Load images from a server folder path">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    Load Folder
+                </button>
+                <button class="btn btn-sm" onclick="showLifDialog()" style="flex:1; font-size:11px;" title="Open a Leica LIF file">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                    Open LIF
+                </button>
+            </div>
+            <div class="folder-dialog" id="folderDialog" style="display:none; margin-top:8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; padding:8px;">
+                <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">Folder path on server:</label>
+                <input type="text" id="folderPath" placeholder="/path/to/images" style="width:100%; box-sizing:border-box; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); padding:4px 6px; border-radius:4px; font-size:11px; font-family:monospace;">
+                <label style="font-size:11px; color:var(--text-secondary); display:block; margin:6px 0 4px;">Filter (optional glob):</label>
+                <input type="text" id="folderPattern" placeholder="e.g. *ch00*.tif" style="width:100%; box-sizing:border-box; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); padding:4px 6px; border-radius:4px; font-size:11px; font-family:monospace;">
+                <div style="display:flex; gap:4px; margin-top:8px;">
+                    <button class="btn btn-sm btn-primary" onclick="loadFolder()" style="flex:1;">Load</button>
+                    <button class="btn btn-sm" onclick="document.getElementById('folderDialog').style.display='none'">Cancel</button>
+                </div>
+                <div id="folderStatus" style="font-size:10px; color:var(--text-secondary); margin-top:4px;"></div>
+            </div>
+            <div class="lif-dialog" id="lifDialog" style="display:none; margin-top:8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; padding:8px;">
+                <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">LIF file path on server:</label>
+                <input type="text" id="lifPath" placeholder="/path/to/file.lif" style="width:100%; box-sizing:border-box; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); padding:4px 6px; border-radius:4px; font-size:11px; font-family:monospace;">
+                <div style="display:flex; gap:4px; margin-top:8px;">
+                    <button class="btn btn-sm" onclick="lifPreview()" style="flex:1;">Preview</button>
+                    <button class="btn btn-sm btn-primary" onclick="loadLif()" style="flex:1;">Load All</button>
+                    <button class="btn btn-sm" onclick="document.getElementById('lifDialog').style.display='none'">Cancel</button>
+                </div>
+                <div id="lifImageList" style="max-height:150px; overflow-y:auto; margin-top:6px; font-size:11px;"></div>
+                <div id="lifStatus" style="font-size:10px; color:var(--text-secondary); margin-top:4px;"></div>
+            </div>
+        </div>
+        <div style="padding:6px 8px; border-bottom:1px solid var(--border);">
+            <input type="text" id="librarySearch" placeholder="Search images..." oninput="renderSidebar()"
+                style="width:100%; box-sizing:border-box; background:var(--bg-primary); color:var(--text-primary);
+                border:1px solid var(--border); padding:5px 8px; border-radius:4px; font-size:12px;">
+        </div>
+        <div class="image-library" id="imageLibrary"></div>
+    </div>
+
+    <!-- Viewer Area -->
+    <div class="viewer-area">
+        <div class="view-tab-bar" id="viewTabBar"></div>
+        <div class="canvas-area" id="canvasArea">
+            <div class="empty-state" id="emptyState">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                <p>No images open</p>
+                <p class="hint">Upload images and they'll appear here. Each image gets independent controls.</p>
+            </div>
+            <canvas id="mainCanvas" style="display:none"></canvas>
+        </div>
+        <div class="info-bar">
+            <span class="coords" id="coordsInfo">Ready</span>
+            <span id="imageInfo"></span>
+            <div class="zoom-controls">
+                <button onclick="zoomOut()">-</button>
+                <span id="zoomLevel">100%</span>
+                <button onclick="zoomIn()">+</button>
+                <button onclick="zoomFit()">Fit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Napari-style Controls -->
+    <div class="right-panel" id="rightPanel">
+
+        <!-- Tools -->
+        <div class="panel-section">
+            <h3><span class="collapse-icon">&#9660;</span> Tools</h3>
+            <div class="section-body">
+                <div class="tools-bar">
+                    <button class="tool-btn active" data-tool="pan" onclick="setTool('pan')" title="Pan (H)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v1M14 10V4a2 2 0 0 0-4 0v6M10 10.5V2a2 2 0 0 0-4 0v9M22 10v2a8 8 0 0 1-8 8H9a8 8 0 0 1-5.66-2.34L2 16.26a2 2 0 0 1 0-2.83l.17-.17A2 2 0 0 1 3.59 13H6v-3"/></svg>
+                    </button>
+                    <button class="tool-btn" data-tool="roi" onclick="setTool('roi')" title="ROI (R)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 2"><rect x="3" y="3" width="18" height="18"/></svg>
+                    </button>
+                    <button class="tool-btn" data-tool="line" onclick="setTool('line')" title="Line Profile (L)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+                    </button>
+                    <button class="tool-btn" data-tool="measure" onclick="setTool('measure')" title="Measure (M)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M2 12l4-4M2 12l4 4M22 12l-4-4M22 12l-4 4"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contrast Limits (Napari's primary control) -->
+        <div class="panel-section" id="contrastLimitsSection">
+            <h3>
+                <span><span class="collapse-icon">&#9660;</span> Contrast Limits</span>
+                <span class="reset-btn" onclick="resetAdjustments()">Reset All</span>
+            </h3>
+            <div class="section-body">
+                <div class="auto-contrast-row">
+                    <button onclick="autoContrast('full')" title="Use full data range">Full Range</button>
+                    <button onclick="autoContrast('auto')" title="Auto contrast (1st-99th percentile)">Auto</button>
+                    <button onclick="autoContrast('minmax')" title="Stretch to min/max of data">Min/Max</button>
+                </div>
+
+                <div class="slider-group">
+                    <label>Contrast Min <span class="value" id="clMinVal">0</span></label>
+                    <input type="range" id="clMin" min="0" max="255" value="0" step="1" oninput="onAdjustmentChange()">
+                </div>
+                <div class="slider-group">
+                    <label>Contrast Max <span class="value" id="clMaxVal">255</span></label>
+                    <input type="range" id="clMax" min="0" max="255" value="255" step="1" oninput="onAdjustmentChange()">
+                </div>
+                <div class="slider-group">
+                    <label>Gamma <span class="value" id="gammaVal">1.00</span></label>
+                    <input type="range" id="gamma" min="10" max="500" value="100" step="1" oninput="onAdjustmentChange()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Channel Adjustments (only for merged composite images) -->
+        <div class="panel-section" id="channelAdjustmentsSection" style="display:none;">
+            <h3>
+                <span><span class="collapse-icon">&#9660;</span> Channel Adjustments</span>
+                <span class="reset-btn" onclick="resetCompositeChannels()">Reset Channels</span>
+            </h3>
+            <div class="section-body">
+                <div id="channelAdjRows" style="display:flex; flex-direction:column; gap:12px;"></div>
+            </div>
+        </div>
+
+        <!-- Colormap (LUT) -->
+        <div class="panel-section" id="colormapSection">
+            <h3><span class="collapse-icon">&#9660;</span> Colormap / LUT</h3>
+            <div class="section-body">
+                <div class="colormap-row">
+                    <select id="colormapSelect" onchange="onAdjustmentChange()">
+                        <option value="none">Original (No LUT)</option>
+                        <optgroup label="Sequential">
+                            <option value="gray">Grayscale</option>
+                            <option value="viridis">Viridis</option>
+                            <option value="magma">Magma</option>
+                            <option value="inferno">Inferno</option>
+                            <option value="plasma">Plasma</option>
+                            <option value="hot">Hot</option>
+                            <option value="cool">Cool</option>
+                            <option value="turbo">Turbo</option>
+                        </optgroup>
+                        <optgroup label="Microscopy LUTs">
+                            <option value="green_lut">Green (Fluorescence)</option>
+                            <option value="red_lut">Red (Fluorescence)</option>
+                            <option value="blue_lut">Blue (DAPI)</option>
+                            <option value="cyan_lut">Cyan</option>
+                            <option value="magenta_lut">Magenta</option>
+                            <option value="yellow_lut">Yellow</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <canvas id="colormapPreview" class="colormap-preview" height="16"></canvas>
+            </div>
+        </div>
+
+        <!-- Display Settings -->
+        <div class="panel-section" id="displaySection">
+            <h3><span class="collapse-icon">&#9660;</span> Display</h3>
+            <div class="section-body">
+                <div class="slider-group">
+                    <label>Opacity <span class="value" id="opacityVal">1.00</span></label>
+                    <input type="range" id="opacity" min="0" max="100" value="100" step="1" oninput="onAdjustmentChange()">
+                </div>
+
+                <div class="toggle-row">
+                    <span>Invert</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="invertToggle" onchange="onAdjustmentChange()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="toggle-row">
+                    <span>Visible</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="visibleToggle" checked onchange="onAdjustmentChange()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="slider-group" style="margin-top:8px">
+                    <label>Blending</label>
+                    <select id="blendingSelect" onchange="onAdjustmentChange()" style="margin-top:4px">
+                        <option value="translucent">Translucent</option>
+                        <option value="additive">Additive</option>
+                        <option value="opaque" selected>Opaque</option>
+                        <option value="minimum">Minimum</option>
+                    </select>
+                </div>
+
+                <div class="slider-group" style="margin-top:8px">
+                    <label>Interpolation</label>
+                    <select id="interpolationSelect" onchange="onAdjustmentChange()" style="margin-top:4px">
+                        <option value="nearest" selected>Nearest (Pixelated)</option>
+                        <option value="bilinear">Bilinear (Smooth)</option>
+                    </select>
+                </div>
+
+                <div class="slider-group" style="margin-top:8px">
+                    <label>Attenuation <span class="value" id="attenuationVal">0.00</span></label>
+                    <input type="range" id="attenuation" min="0" max="100" value="0" step="1" oninput="onAdjustmentChange()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Channels -->
+        <div class="panel-section" id="channelSection">
+            <h3><span class="collapse-icon">&#9660;</span> Channels</h3>
+            <div class="section-body">
+                <div class="channel-toggles" id="channelToggles">
+                    <div class="channel-toggle red active" data-channel="red" onclick="toggleChannel(this)">R</div>
+                    <div class="channel-toggle green active" data-channel="green" onclick="toggleChannel(this)">G</div>
+                    <div class="channel-toggle blue active" data-channel="blue" onclick="toggleChannel(this)">B</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Histogram -->
+        <div class="panel-section">
+            <h3><span class="collapse-icon">&#9660;</span> Histogram</h3>
+            <div class="section-body">
+                <div class="histogram-container">
+                    <canvas id="histogramCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Info / Metadata -->
+        <div class="panel-section" id="metadataSection">
+            <h3><span class="collapse-icon">&#9660;</span> Image Info</h3>
+            <div class="section-body">
+                <table class="metadata-table" id="metadataTable">
+                    <tr><td colspan="2" style="color: var(--text-secondary)">No image selected</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Analysis Results -->
+        <div class="panel-section" id="analysisSection" style="display:none">
+            <h3><span class="collapse-icon">&#9660;</span> Analysis Results</h3>
+            <div class="section-body" id="analysisResults"></div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/jspdf.umd.min.js"></script>
+<script>
+// ===========================================================================
+//  Lysa - Full Napari-style Controls
+// ===========================================================================
+
+const API = '';
+
+// --- Colormaps (LUTs) ---
+const COLORMAPS = {
+    none: null,
+    gray: (t) => [t, t, t],
+    viridis: (t) => {
+        const r = Math.round((-0.53*t*t + 1.86*t - 0.33) * 255 * (0.27 + 0.73*t));
+        const g = Math.round((0.005 + t * 0.83) * 255);
+        const b = Math.round((0.33 + 0.42*Math.sin(t * 3.14 * 0.82)) * 255);
+        return [clamp8(r), clamp8(g), clamp8(b)];
+    },
+    magma: (t) => {
+        const r = Math.round((t < 0.5 ? t * 2.2 : 1.0 + (t - 0.5) * 0.2) * 255);
+        const g = Math.round(t * t * 0.8 * 255);
+        const b = Math.round((0.02 + t * 0.6 + Math.sin(t * 2.5) * 0.3) * 255);
+        return [clamp8(r), clamp8(g), clamp8(b)];
+    },
+    inferno: (t) => {
+        const r = Math.round(Math.min(1, 1.4 * t + 0.1 * Math.sin(t * 6)) * 255);
+        const g = Math.round(Math.pow(t, 1.8) * 255);
+        const b = Math.round((0.1 + 0.7 * Math.sin(t * Math.PI * 0.7)) * 255);
+        return [clamp8(r), clamp8(g), clamp8(b)];
+    },
+    plasma: (t) => {
+        const r = Math.round((0.05 + 0.95 * Math.pow(t, 0.6)) * 255);
+        const g = Math.round(Math.pow(t, 2.0) * 0.9 * 255);
+        const b = Math.round((0.53 - 0.5 * t + 0.3 * Math.sin(t * 4)) * 255);
+        return [clamp8(r), clamp8(g), clamp8(b)];
+    },
+    hot: (t) => {
+        const r = Math.round(Math.min(1, t * 2.5) * 255);
+        const g = Math.round(Math.max(0, Math.min(1, (t - 0.4) * 2.5)) * 255);
+        const b = Math.round(Math.max(0, Math.min(1, (t - 0.7) * 3.33)) * 255);
+        return [clamp8(r), clamp8(g), clamp8(b)];
+    },
+    cool: (t) => [clamp8(Math.round(t * 255)), clamp8(Math.round((1 - t) * 255)), 255],
+    turbo: (t) => {
+        const r = Math.round((0.13 + (t < 0.5 ? t * 3.5 : 3.5 - t * 3.5)) * 255 * (0.3 + 0.7 * Math.pow(t, 0.3)));
+        const g = Math.round(Math.sin(t * Math.PI) * 255);
+        const b = Math.round((0.5 + 0.5 * Math.cos(t * Math.PI * 1.1)) * 255 * (1 - Math.pow(t, 3)));
+        return [clamp8(r), clamp8(g), clamp8(b)];
+    },
+    green_lut: (t) => [0, clamp8(Math.round(t * 255)), 0],
+    red_lut: (t) => [clamp8(Math.round(t * 255)), 0, 0],
+    blue_lut: (t) => [0, 0, clamp8(Math.round(t * 255))],
+    cyan_lut: (t) => [0, clamp8(Math.round(t * 255)), clamp8(Math.round(t * 255))],
+    magenta_lut: (t) => [clamp8(Math.round(t * 255)), 0, clamp8(Math.round(t * 255))],
+    yellow_lut: (t) => [clamp8(Math.round(t * 255)), clamp8(Math.round(t * 255)), 0],
+};
+
+function clamp8(v) { return Math.max(0, Math.min(255, v)); }
+
+// Pre-compute LUT tables (256 entries each) for performance
+const LUT_TABLES = {};
+function getLutTable(name) {
+    if (LUT_TABLES[name]) return LUT_TABLES[name];
+    const fn = COLORMAPS[name];
+    if (!fn) return null;
+    const table = new Uint8Array(256 * 3);
+    for (let i = 0; i < 256; i++) {
+        const [r, g, b] = fn(i / 255);
+        table[i * 3] = r;
+        table[i * 3 + 1] = g;
+        table[i * 3 + 2] = b;
+    }
+    LUT_TABLES[name] = table;
+    return table;
+}
+
+// --- State ---
+const state = {
+    images: {},
+    folders: [],   // [{id, name, expanded, imageIds:[]}]
+    openTabs: [],
+    activeTab: null,
+    parallelViews: 1,   // How many images to show simultaneously (min 1)
+    gridLayout: 'auto',  // 'auto', 'row', 'col', 'grid'
+    tool: 'pan',
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    isPanning: false,
+    panStart: null,
+    drawStart: null,
+    drawEnd: null,
+    isDrawing: false,
+    viewTabs: [{ id: 'grid', label: 'Grid View' }],
+    activeViewTab: 'grid',
+    loadedSessionName: null,  // name of the currently loaded session (for quick re-save)
+};
+
+function defaultAdjustments() {
+    return {
+        clMin: 0,              // Contrast limit min
+        clMax: 255,            // Contrast limit max
+        gamma: 1.0,
+        colormap: 'none',      // LUT name
+        opacity: 1.0,
+        invert: false,
+        visible: true,
+        blending: 'opaque',
+        interpolation: 'nearest',
+        attenuation: 0.0,
+        channels: { red: true, green: true, blue: true },
+    };
+}
+
+
+// ===========================================================================
+//  Image Upload
+// ===========================================================================
+
+async function handleFileUpload(files, { sidebarOnly = false } = {}) {
+    // sidebarOnly: if true, load images into library only (not grid)
+    // Auto-detect: if many files (>3), default to sidebar-only
+    const autoSidebarOnly = sidebarOnly || files.length > 3;
+    const total = files.length;
+    let completed = 0;
+
+    // Show progress in the upload zone
+    const uploadZoneEl = document.getElementById('uploadZone');
+    const origHTML = uploadZoneEl.innerHTML;
+    function updateProgress() {
+        if (total > 1) {
+            uploadZoneEl.innerHTML = `<div style="font-size:13px;">Uploading ${completed}/${total}...</div><div style="width:100%;height:6px;background:var(--bg-primary);border-radius:3px;margin-top:6px;"><div style="width:${Math.round(completed/total*100)}%;height:100%;background:var(--accent);border-radius:3px;transition:width 0.2s;"></div></div>`;
+        }
+    }
+    updateProgress();
+
+    // Upload a single file and register it
+    async function uploadOne(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const resp = await fetch(`${API}/api/upload`, { method: 'POST', body: formData });
+            const data = await resp.json();
+
+            if (data.images) {
+                // Multi-image (LIF): register metadata only
+                for (const item of data.images) {
+                    if (item.error) continue;
+                    registerImageMetadata(item.image_id, item.metadata);
+                }
+            } else if (data.image_id) {
+                if (autoSidebarOnly) {
+                    registerImageMetadata(data.image_id, data.metadata);
+                } else {
+                    await loadImageIntoFrontend(data.image_id, data.metadata, { showInGrid: true });
+                }
+            }
+        } catch (err) {
+            console.error('Upload failed:', file.name, err);
+        }
+        completed++;
+        updateProgress();
+        // Incremental render every few files so user sees progress
+        if (completed % 5 === 0 || completed === total) renderSidebar();
+    }
+
+    // Parallel upload with concurrency limit
+    const CONCURRENCY = 6;
+    const fileArr = Array.from(files);
+    let running = 0;
+    let idx = 0;
+
+    await new Promise(resolveAll => {
+        function launchNext() {
+            while (running < CONCURRENCY && idx < fileArr.length) {
+                running++;
+                const file = fileArr[idx++];
+                uploadOne(file).finally(() => {
+                    running--;
+                    if (idx < fileArr.length) {
+                        launchNext();
+                    } else if (running === 0) {
+                        resolveAll();
+                    }
+                });
+            }
+            if (idx >= fileArr.length && running === 0) resolveAll();
+        }
+        launchNext();
+    });
+
+    // Restore upload zone
+    uploadZoneEl.innerHTML = origHTML;
+    renderAll();
+}
+
+// Drag/drop
+const uploadZone = document.getElementById('uploadZone');
+['dragenter', 'dragover'].forEach(evt => {
+    document.body.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); });
+    uploadZone.addEventListener(evt, () => uploadZone.classList.add('dragover'));
+});
+['dragleave', 'drop'].forEach(evt => {
+    uploadZone.addEventListener(evt, () => uploadZone.classList.remove('dragover'));
+});
+document.body.addEventListener('drop', async e => {
+    e.preventDefault();
+    // Check if a folder was dropped (using webkitGetAsEntry)
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0) {
+        const entries = [];
+        for (let i = 0; i < items.length; i++) {
+            const entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+            if (entry) entries.push(entry);
+        }
+        // If any entry is a directory, collect all image files from it
+        const hasDir = entries.some(e => e.isDirectory);
+        if (hasDir) {
+            const imageFiles = await collectFilesFromEntries(entries);
+            if (imageFiles.length > 0) handleFileUpload(imageFiles, { sidebarOnly: true });
+            return;
+        }
+    }
+    if (e.dataTransfer.files.length) handleFileUpload(e.dataTransfer.files);
+});
+
+// --- Folder drop zone ---
+const folderDropZone = document.getElementById('folderDropZone');
+if (folderDropZone) {
+    ['dragenter', 'dragover'].forEach(evt => {
+        folderDropZone.addEventListener(evt, e => {
+            e.preventDefault(); e.stopPropagation();
+            folderDropZone.classList.add('dragover');
+        });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+        folderDropZone.addEventListener(evt, e => {
+            folderDropZone.classList.remove('dragover');
+        });
+    });
+    folderDropZone.addEventListener('drop', async e => {
+        e.preventDefault(); e.stopPropagation();
+        const items = e.dataTransfer.items;
+        if (!items || items.length === 0) return;
+        const entries = [];
+        for (let i = 0; i < items.length; i++) {
+            const entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+            if (entry) entries.push(entry);
+        }
+        const imageFiles = await collectFilesFromEntries(entries);
+        if (imageFiles.length > 0) {
+            handleFileUpload(imageFiles);
+        } else {
+            alert('No image files found in the dropped folder.');
+        }
+    });
+}
+
+// Recursively collect image files from dropped directory entries
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.gif', '.lif'];
+
+function collectFilesFromEntries(entries) {
+    return new Promise(resolve => {
+        const files = [];
+        let pending = 0;
+
+        function readEntry(entry) {
+            if (entry.isFile) {
+                pending++;
+                entry.file(f => {
+                    const ext = '.' + f.name.split('.').pop().toLowerCase();
+                    if (IMAGE_EXTENSIONS.includes(ext)) files.push(f);
+                    pending--;
+                    if (pending === 0) resolve(files);
+                });
+            } else if (entry.isDirectory) {
+                pending++;
+                const reader = entry.createReader();
+                reader.readEntries(subEntries => {
+                    for (const se of subEntries) readEntry(se);
+                    pending--;
+                    if (pending === 0) resolve(files);
+                });
+            }
+        }
+
+        for (const entry of entries) readEntry(entry);
+        // Safety: if no entries, resolve immediately
+        if (entries.length === 0) resolve(files);
+    });
+}
+
+
+// ===========================================================================
+//  Render Everything
+// ===========================================================================
+
+function renderAll() {
+    renderSidebar();
+    renderViewTabBar();
+    renderViewer();
+    syncControlsToActiveImage();
+}
+
+function renderViewTabBar() {
+    const bar = document.getElementById('viewTabBar');
+    bar.innerHTML = '';
+
+    for (const tab of state.viewTabs) {
+        const el = document.createElement('div');
+        el.className = `view-tab ${tab.id === state.activeViewTab ? 'active' : ''}`;
+        el.onclick = () => { state.activeViewTab = tab.id; renderAll(); };
+
+        // Icon for grid vs single image
+        if (tab.id === 'grid') {
+            el.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> ${tab.label}`;
+        } else {
+            el.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg> <span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${tab.label}">${tab.label}</span>`;
+            // Close button (not for grid tab)
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'tab-close';
+            closeBtn.textContent = '\u00d7';
+            closeBtn.onclick = (e) => {
+                e.stopPropagation();
+                closeViewTab(tab.id);
+            };
+            el.appendChild(closeBtn);
+        }
+        bar.appendChild(el);
+    }
+}
+
+function openImageTab(imageId) {
+    const img = state.images[imageId];
+    if (!img) return;
+    // Check if tab already exists for this image
+    const existing = state.viewTabs.find(t => t.id === imageId);
+    if (!existing) {
+        state.viewTabs.push({ id: imageId, label: img.name });
+    }
+    state.activeViewTab = imageId;
+    renderAll();
+    // Ensure pixel data is loaded
+    if (!img._loaded) {
+        ensureImageLoaded(imageId).then(() => renderViewer());
+    }
+}
+
+function closeViewTab(tabId) {
+    state.viewTabs = state.viewTabs.filter(t => t.id !== tabId);
+    if (state.activeViewTab === tabId) {
+        state.activeViewTab = 'grid';
+    }
+    renderAll();
+}
+
+
+// ===========================================================================
+//  Sidebar
+// ===========================================================================
+
+// --- Folder helpers ---------------------------------------------------------
+function _foldersById() {
+    const map = {};
+    for (const f of state.folders) map[f.id] = f;
+    return map;
+}
+function _imageFolderId(imageId) {
+    for (const f of state.folders) {
+        if (f.imageIds.includes(imageId)) return f.id;
+    }
+    return null;
+}
+function _removeImageFromAllFolders(imageId) {
+    for (const f of state.folders) {
+        const idx = f.imageIds.indexOf(imageId);
+        if (idx >= 0) f.imageIds.splice(idx, 1);
+    }
+}
+function createFolder() {
+    const name = window.prompt('Folder name:', 'New Folder');
+    if (!name || !name.trim()) return;
+    state.folders.push({
+        id: 'fld_' + Math.random().toString(36).slice(2, 10),
+        name: name.trim(),
+        expanded: true,
+        imageIds: [],
+    });
+    renderSidebar();
+}
+function renameFolder(folderId) {
+    const f = _foldersById()[folderId];
+    if (!f) return;
+    const name = window.prompt('Rename folder:', f.name);
+    if (!name || !name.trim()) return;
+    f.name = name.trim();
+    renderSidebar();
+}
+function deleteFolder(folderId) {
+    const idx = state.folders.findIndex(f => f.id === folderId);
+    if (idx < 0) return;
+    if (!confirm(`Delete folder "${state.folders[idx].name}"? Images will move back to the root.`)) return;
+    state.folders.splice(idx, 1);
+    renderSidebar();
+}
+function toggleFolderExpanded(folderId) {
+    const f = _foldersById()[folderId];
+    if (!f) return;
+    f.expanded = !f.expanded;
+    renderSidebar();
+}
+function moveImageToFolder(imageId, folderId /* or null for root */) {
+    if (!state.images[imageId]) return;
+    _removeImageFromAllFolders(imageId);
+    if (folderId) {
+        const f = _foldersById()[folderId];
+        if (f && !f.imageIds.includes(imageId)) {
+            f.imageIds.push(imageId);
+            // Keep the folder contents sorted alphabetically by image name
+            _sortFolderImageIds(f);
+        }
+    }
+    renderSidebar();
+}
+function _sortFolderImageIds(folder) {
+    folder.imageIds.sort((a, b) => {
+        const na = (state.images[a] && state.images[a].name) || '';
+        const nb = (state.images[b] && state.images[b].name) || '';
+        return na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+    });
+}
+
+// --- Card renderer ----------------------------------------------------------
+function _buildImageCard(id) {
+    const img = state.images[id];
+    const isVisible = state.openTabs.includes(id);
+    const card = document.createElement('div');
+    card.className = `image-card ${id === state.activeTab ? 'active' : ''}`;
+    card.draggable = true;
+    card.dataset.imageId = id;
+    card.title = img.name;  // tooltip shows full name even when truncated
+    // Click card to make active (and add to grid if not already visible)
+    card.onclick = () => openTab(id);
+    // Double-click card to open in its own tab
+    card.ondblclick = (e) => { e.stopPropagation(); openImageTab(id); };
+    card.innerHTML = `
+        <img src="${API}/api/images/${id}/thumbnail?size=96" alt="">
+        <div class="image-card-info">
+            <div class="name">${img.name}</div>
+            <div class="meta">${img.metadata.width}x${img.metadata.height} &middot; ${img.metadata.mode}${img.metadata.bit_depth > 8 ? ' &middot; ' + img.metadata.bit_depth + '-bit' : ''}</div>
+        </div>
+        <span class="eye-toggle ${isVisible ? 'visible' : ''}" title="${isVisible ? 'Hide from grid' : 'Show in grid'}" data-id="${id}">
+            ${isVisible
+                ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+                : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+            }
+        </span>
+        <span class="close-btn" onclick="event.stopPropagation(); removeImage('${id}')">&times;</span>
+    `;
+    const eyeEl = card.querySelector('.eye-toggle');
+    eyeEl.onclick = (e) => { e.stopPropagation(); toggleImageVisibility(id); };
+
+    card.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/lysa-image-id', id);
+        e.dataTransfer.effectAllowed = 'move';
+        card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+
+    return card;
+}
+
+// Sort helper: compare two image IDs by their image name, alphabetically
+function _cmpByName(a, b) {
+    const na = (state.images[a] && state.images[a].name) || '';
+    const nb = (state.images[b] && state.images[b].name) || '';
+    return na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function renderSidebar() {
+    const lib = document.getElementById('imageLibrary');
+    lib.innerHTML = '';
+
+    // Search filter — case-insensitive substring match
+    const searchEl = document.getElementById('librarySearch');
+    const query = (searchEl ? searchEl.value : '').trim().toLowerCase();
+    function matchesSearch(id) {
+        if (!query) return true;
+        const name = (state.images[id] && state.images[id].name) || '';
+        return name.toLowerCase().includes(query);
+    }
+
+    // Track which images are inside any folder so we can render the rest at root
+    const filed = new Set();
+    for (const f of state.folders) for (const id of f.imageIds) filed.add(id);
+
+    // --- Folder groups ---
+    for (const folder of state.folders) {
+        // Sort folder contents alphabetically
+        _sortFolderImageIds(folder);
+
+        // Filter folder contents by search query
+        const visibleIds = folder.imageIds.filter(id => state.images[id] && matchesSearch(id));
+
+        // If searching and no matches in this folder, skip the whole folder
+        if (query && visibleIds.length === 0) continue;
+
+        const group = document.createElement('div');
+        group.className = 'folder-group';
+
+        const header = document.createElement('div');
+        header.className = 'folder-header' + (folder.expanded ? '' : ' collapsed');
+        header.innerHTML = `
+            <span class="folder-caret">▼</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span class="folder-name"></span>
+            <span class="folder-count"></span>
+            <span class="folder-actions">
+                <button title="Rename folder" data-action="rename">✎</button>
+                <button title="Delete folder" data-action="delete">×</button>
+            </span>
+        `;
+        header.querySelector('.folder-name').textContent = folder.name;
+        header.querySelector('.folder-count').textContent = `(${folder.imageIds.length})`;
+
+        header.onclick = (e) => {
+            if (e.target.closest('button')) return;
+            toggleFolderExpanded(folder.id);
+        };
+        header.querySelector('[data-action="rename"]').onclick = (e) => {
+            e.stopPropagation(); renameFolder(folder.id);
+        };
+        header.querySelector('[data-action="delete"]').onclick = (e) => {
+            e.stopPropagation(); deleteFolder(folder.id);
+        };
+
+        // Drag-drop target
+        header.addEventListener('dragover', (e) => {
+            if (!e.dataTransfer.types.includes('text/lysa-image-id')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            header.classList.add('drag-over');
+        });
+        header.addEventListener('dragleave', () => header.classList.remove('drag-over'));
+        header.addEventListener('drop', (e) => {
+            const imageId = e.dataTransfer.getData('text/lysa-image-id');
+            header.classList.remove('drag-over');
+            if (imageId) {
+                e.preventDefault();
+                moveImageToFolder(imageId, folder.id);
+            }
+        });
+
+        group.appendChild(header);
+
+        if (folder.expanded) {
+            const children = document.createElement('div');
+            children.className = 'folder-children';
+            for (const id of visibleIds) {
+                children.appendChild(_buildImageCard(id));
+            }
+            group.appendChild(children);
+        }
+
+        lib.appendChild(group);
+    }
+
+    // --- Root (unfiled) images, always sorted alphabetically ---
+    const rootIds = Object.keys(state.images)
+        .filter(id => !filed.has(id) && matchesSearch(id))
+        .sort(_cmpByName);
+
+    for (const id of rootIds) {
+        lib.appendChild(_buildImageCard(id));
+    }
+
+    // --- Drop zone for moving images back to root ---
+    if (state.folders.length > 0 && !query) {
+        const rootDrop = document.createElement('div');
+        rootDrop.className = 'root-drop-zone';
+        rootDrop.textContent = 'Drop here to remove from folder';
+        rootDrop.addEventListener('dragover', (e) => {
+            if (!e.dataTransfer.types.includes('text/lysa-image-id')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            rootDrop.classList.add('drag-over');
+        });
+        rootDrop.addEventListener('dragleave', () => rootDrop.classList.remove('drag-over'));
+        rootDrop.addEventListener('drop', (e) => {
+            const imageId = e.dataTransfer.getData('text/lysa-image-id');
+            rootDrop.classList.remove('drag-over');
+            if (imageId) {
+                e.preventDefault();
+                moveImageToFolder(imageId, null);
+            }
+        });
+        lib.appendChild(rootDrop);
+    }
+}
+
+function sortLibraryByName() {
+    // Sort state.images object keys alphabetically by image name.
+    // JS objects preserve insertion order, so we rebuild the object.
+    const sorted = Object.keys(state.images).sort((a, b) => {
+        const na = (state.images[a].name || '');
+        const nb = (state.images[b].name || '');
+        return na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    const reordered = {};
+    for (const id of sorted) reordered[id] = state.images[id];
+    state.images = reordered;
+
+    // Also sort images inside every folder
+    state.folders.forEach(f => _sortFolderImageIds(f));
+
+    renderSidebar();
+}
+
+function toggleImageVisibility(id) {
+    const idx = state.openTabs.indexOf(id);
+    if (idx >= 0) {
+        // Remove from grid
+        state.openTabs.splice(idx, 1);
+        if (state.activeTab === id) {
+            state.activeTab = state.openTabs[0] || null;
+        }
+    } else {
+        // Add to grid
+        state.openTabs.push(id);
+        state.activeTab = id;
+    }
+    state.parallelViews = Math.max(1, state.openTabs.length);
+    document.getElementById('parallelViewCount').textContent = state.parallelViews;
+    renderAll();
+}
+
+function showAllImages() {
+    state.openTabs = Object.keys(state.images).slice();
+    state.parallelViews = Math.max(1, state.openTabs.length);
+    document.getElementById('parallelViewCount').textContent = state.parallelViews;
+    if (!state.activeTab && state.openTabs.length) state.activeTab = state.openTabs[0];
+    renderAll();
+}
+
+function hideAllImages() {
+    state.openTabs = [];
+    state.activeTab = Object.keys(state.images)[0] || null;
+    state.parallelViews = 1;
+    document.getElementById('parallelViewCount').textContent = state.parallelViews;
+    renderAll();
+}
+
+function removeImage(id) {
+    state.openTabs = state.openTabs.filter(t => t !== id);
+    if (state.activeTab === id) state.activeTab = state.openTabs[0] || null;
+    // Close view tab if open for this image
+    state.viewTabs = state.viewTabs.filter(t => t.id !== id);
+    if (state.activeViewTab === id) state.activeViewTab = 'grid';
+    _removeImageFromAllFolders(id);
+    delete state.images[id];
+    fetch(`${API}/api/images/${id}`, { method: 'DELETE' });
+
+    // Auto-adjust parallel views
+    state.parallelViews = Math.max(1, state.openTabs.length);
+    document.getElementById('parallelViewCount').textContent = state.parallelViews;
+
+    renderAll();
+}
+
+
+// ===========================================================================
+//  Image Selection (click panel or sidebar to select active image)
+// ===========================================================================
+
+async function openTab(id) {
+    if (!state.openTabs.includes(id)) {
+        state.openTabs.push(id);
+        state.parallelViews = Math.max(1, state.openTabs.length);
+        document.getElementById('parallelViewCount').textContent = state.parallelViews;
+    }
+    state.activeTab = id;
+    renderAll();  // will show placeholder if not loaded
+    // Lazy load triggers in renderParallelView, but also ensure here for immediate use
+    const img = state.images[id];
+    if (img && !img._loaded) {
+        await ensureImageLoaded(id);
+        renderAll();
+    }
+}
+
+
+// ===========================================================================
+//  Parallel Views Control
+// ===========================================================================
+
+function changeParallelViews(delta) {
+    state.parallelViews = Math.max(1, Math.min(12, state.parallelViews + delta));
+    document.getElementById('parallelViewCount').textContent = state.parallelViews;
+    renderViewer();
+}
+
+function onLayoutChange() {
+    state.gridLayout = document.getElementById('gridLayout').value;
+    renderViewer();
+}
+
+function getGridDimensions(count) {
+    const layout = state.gridLayout;
+    if (layout === 'row') return { cols: count, rows: 1 };
+    if (layout === 'col') return { cols: 1, rows: count };
+    if (layout === 'grid') {
+        const cols = Math.ceil(Math.sqrt(count));
+        return { cols, rows: Math.ceil(count / cols) };
+    }
+    // auto
+    if (count <= 1) return { cols: 1, rows: 1 };
+    if (count <= 2) return { cols: 2, rows: 1 };
+    if (count <= 4) return { cols: 2, rows: Math.ceil(count / 2) };
+    if (count <= 6) return { cols: 3, rows: Math.ceil(count / 3) };
+    const cols = Math.ceil(Math.sqrt(count));
+    return { cols, rows: Math.ceil(count / cols) };
+}
+
+
+// ===========================================================================
+//  Core Rendering: Client-side pixel processing with all Napari controls
+// ===========================================================================
+
+// Apply adjustments for an image, routing to the raw high-bit-depth path when
+// raw pixel data is available (preserves original dynamic range, no noise
+// amplification). Falls back to the legacy 8-bit path for composites.
+function applyImageAdjustments(img) {
+    if (img && img.rawData) return applyRawAdjustments(img);
+    return applyAdjustments(img.originalImageData, img.adjustments);
+}
+
+function applyRawAdjustments(img) {
+    const raw = img.rawData;
+    const W = raw.width, H = raw.height, C = raw.channels, src = raw.data;
+    const adj = img.adjustments;
+    const out = new Uint8ClampedArray(W * H * 4);
+
+    if (!adj.visible) return new ImageData(out, W, H);
+
+    const range = (adj.clMax - adj.clMin) || 1;
+    const invGamma = 1.0 / adj.gamma;
+    const lutTable = (adj.colormap && adj.colormap !== 'none') ? getLutTable(adj.colormap) : null;
+    const finalAlpha = Math.round(255 * adj.opacity);
+    const pxCount = W * H;
+
+    for (let i = 0; i < pxCount; i++) {
+        let r, g, b;
+        if (C === 1) {
+            const v = src[i];
+            r = g = b = ((v - adj.clMin) / range) * 255;
+        } else {
+            const base = i * C;
+            r = ((src[base] - adj.clMin) / range) * 255;
+            g = (C > 1) ? ((src[base + 1] - adj.clMin) / range) * 255 : r;
+            b = (C > 2) ? ((src[base + 2] - adj.clMin) / range) * 255 : r;
+        }
+
+        if (!adj.channels.red) r = 0;
+        if (!adj.channels.green) g = 0;
+        if (!adj.channels.blue) b = 0;
+
+        if (r < 0) r = 0; else if (r > 255) r = 255;
+        if (g < 0) g = 0; else if (g > 255) g = 255;
+        if (b < 0) b = 0; else if (b > 255) b = 255;
+
+        if (adj.gamma !== 1.0) {
+            r = Math.pow(r / 255, invGamma) * 255;
+            g = Math.pow(g / 255, invGamma) * 255;
+            b = Math.pow(b / 255, invGamma) * 255;
+        }
+
+        if (adj.attenuation > 0) {
+            const lum = (r + g + b) / 3 / 255;
+            const factor = 1 - adj.attenuation * lum;
+            r *= factor; g *= factor; b *= factor;
+        }
+
+        if (adj.invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+
+        if (lutTable) {
+            const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+            const li = Math.max(0, Math.min(255, lum));
+            r = lutTable[li * 3];
+            g = lutTable[li * 3 + 1];
+            b = lutTable[li * 3 + 2];
+        }
+
+        out[i * 4]     = r;
+        out[i * 4 + 1] = g;
+        out[i * 4 + 2] = b;
+        out[i * 4 + 3] = finalAlpha;
+    }
+    return new ImageData(out, W, H);
+}
+
+function applyAdjustments(originalImageData, adjustments) {
+    const src = originalImageData.data;
+    const out = new Uint8ClampedArray(src.length);
+    const { clMin, clMax, gamma, colormap, opacity, invert, visible, channels, attenuation } = adjustments;
+
+    if (!visible) {
+        // Return transparent
+        return new ImageData(out, originalImageData.width, originalImageData.height);
+    }
+
+    const range = clMax - clMin || 1;
+    const invGamma = 1.0 / gamma;
+    const lutTable = (colormap && colormap !== 'none') ? getLutTable(colormap) : null;
+
+    for (let i = 0; i < src.length; i += 4) {
+        let r = src[i], g = src[i + 1], b = src[i + 2], a = src[i + 3];
+
+        // Channel visibility
+        if (!channels.red) r = 0;
+        if (!channels.green) g = 0;
+        if (!channels.blue) b = 0;
+
+        // Contrast limits (window/level)
+        r = ((r - clMin) / range) * 255;
+        g = ((g - clMin) / range) * 255;
+        b = ((b - clMin) / range) * 255;
+
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+
+        // Gamma
+        if (gamma !== 1.0) {
+            r = Math.pow(r / 255, invGamma) * 255;
+            g = Math.pow(g / 255, invGamma) * 255;
+            b = Math.pow(b / 255, invGamma) * 255;
+        }
+
+        // Attenuation (reduce intensity of brighter pixels, simulating depth)
+        if (attenuation > 0) {
+            const lum = (r + g + b) / 3 / 255;
+            const factor = 1 - attenuation * lum;
+            r *= factor; g *= factor; b *= factor;
+        }
+
+        // Invert
+        if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+
+        // Apply colormap/LUT
+        if (lutTable) {
+            const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+            const li = Math.max(0, Math.min(255, lum));
+            r = lutTable[li * 3];
+            g = lutTable[li * 3 + 1];
+            b = lutTable[li * 3 + 2];
+        }
+
+        // Opacity
+        const finalAlpha = Math.round(a * opacity);
+
+        out[i]     = clamp8(Math.round(r));
+        out[i + 1] = clamp8(Math.round(g));
+        out[i + 2] = clamp8(Math.round(b));
+        out[i + 3] = finalAlpha;
+    }
+
+    return new ImageData(out, originalImageData.width, originalImageData.height);
+}
+
+function renderViewer() {
+    const area = document.getElementById('canvasArea');
+    const emptyState = document.getElementById('emptyState');
+    const mainCanvas = document.getElementById('mainCanvas');
+
+    // Are we viewing a single image tab or the grid?
+    const isGridTab = state.activeViewTab === 'grid';
+    const singleImageId = !isGridTab ? state.activeViewTab : null;
+
+    if (isGridTab && state.openTabs.length === 0) {
+        // Grid tab with no images visible
+        const grid = area.querySelector('.grid-view');
+        if (grid) grid.remove();
+        mainCanvas.style.display = 'none';
+
+        const hasImages = Object.keys(state.images).length > 0;
+        emptyState.style.display = '';
+        emptyState.querySelector('p').textContent = hasImages ? 'No images selected for viewing' : 'No images open';
+        emptyState.querySelector('.hint').textContent = hasImages
+            ? 'Click the eye icon on sidebar images to show them in the grid, or click a card to view it.'
+            : 'Upload images and they\'ll appear here. Each image gets independent controls.';
+        return;
+    }
+
+    emptyState.style.display = 'none';
+
+    if (singleImageId && state.images[singleImageId]) {
+        // Single image tab: show one image full-size
+        const img = state.images[singleImageId];
+        state.activeTab = singleImageId;
+
+        // Remove grid view if present
+        const grid = area.querySelector('.grid-view');
+        if (grid) grid.remove();
+
+        if (img._loaded && img.originalImageData) {
+            mainCanvas.style.display = 'block';
+            renderSingleImage(mainCanvas, singleImageId);
+        } else {
+            // Show loading state while image loads
+            mainCanvas.style.display = 'none';
+            let placeholder = area.querySelector('.single-loading');
+            if (!placeholder) {
+                placeholder = document.createElement('div');
+                placeholder.className = 'single-loading';
+                placeholder.style.cssText = 'display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; position:absolute; inset:0;';
+                area.appendChild(placeholder);
+            }
+            placeholder.innerHTML = `
+                <img src="${API}/api/images/${singleImageId}/thumbnail?size=400" style="max-width:60%; max-height:60%; opacity:0.4; object-fit:contain; border-radius:8px;">
+                <div style="color:var(--accent); font-size:13px;">Loading full image...</div>`;
+            ensureImageLoaded(singleImageId).then(() => renderViewer());
+        }
+    } else {
+        // Grid view
+        mainCanvas.style.display = 'none';
+        const singleLoading = area.querySelector('.single-loading');
+        if (singleLoading) singleLoading.remove();
+        renderParallelView(area);
+    }
+
+    updateInfoBar();
+    fetchAndDrawHistogram();
+}
+
+function renderSingleImage(canvas, imageId) {
+    const img = state.images[imageId];
+    if (!img) return;
+
+    const adjusted = applyImageAdjustments(img);
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    // Interpolation
+    const interp = img.adjustments.interpolation;
+    canvas.style.imageRendering = interp === 'nearest' ? 'pixelated' : 'auto';
+
+    const ctx = canvas.getContext('2d');
+    ctx.putImageData(adjusted, 0, 0);
+    canvas.style.transform = `scale(${state.zoom}) translate(${state.panX}px, ${state.panY}px)`;
+    canvas.style.transformOrigin = 'center center';
+}
+
+// Apply per-image zoom/pan transform to its cell canvas (grid view)
+function applyCellViewTransform(cell, img) {
+    if (!cell || !img) return;
+    const canvas = cell.querySelector('canvas');
+    if (!canvas) return;
+    if (!img.viewState) img.viewState = { zoom: 1, panX: 0, panY: 0 };
+    const v = img.viewState;
+    canvas.style.transformOrigin = 'center center';
+    canvas.style.transform = `translate(${v.panX}px, ${v.panY}px) scale(${v.zoom})`;
+}
+
+// Find the grid cell currently displaying the given image id
+function getCellForImageId(id) {
+    const cells = document.querySelectorAll('.grid-cell');
+    for (const cell of cells) {
+        if (getImageIdFromCell(cell) === id) return cell;
+    }
+    return null;
+}
+
+function renderParallelView(area, overrideIds) {
+    let grid = area.querySelector('.grid-view');
+    if (!grid) { grid = document.createElement('div'); grid.className = 'grid-view'; area.appendChild(grid); }
+    grid.innerHTML = '';
+
+    let visibleIds;
+    if (overrideIds) {
+        visibleIds = overrideIds;
+    } else {
+        // Determine which images to show: up to parallelViews, centered on activeTab
+        const activeIdx = state.openTabs.indexOf(state.activeTab);
+        const count = Math.min(state.parallelViews, state.openTabs.length);
+        let startIdx = Math.max(0, activeIdx - Math.floor(count / 2));
+        if (startIdx + count > state.openTabs.length) startIdx = Math.max(0, state.openTabs.length - count);
+        visibleIds = state.openTabs.slice(startIdx, startIdx + count);
+    }
+
+    const { cols, rows } = getGridDimensions(visibleIds.length);
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+    const needsLoad = [];  // track images that need lazy loading
+
+    for (const id of visibleIds) {
+        const img = state.images[id];
+        if (!img) continue;
+        const cell = document.createElement('div');
+        cell.className = `grid-cell ${id === state.activeTab ? 'active-cell' : ''}`;
+        cell.dataset.imageId = id;
+        // Only allow drag-to-reorder when image is NOT zoomed in;
+        // when zoomed in, mousedown should pan instead.
+        const isZoomed = img.viewState && img.viewState.zoom > 1;
+        cell.draggable = !isZoomed;
+        // Selection is handled by canvasArea mousedown — no onclick here
+        // to avoid destroying the DOM mid-tool-interaction.
+
+        // Drag-to-reorder in grid
+        cell.addEventListener('dragstart', (ev) => {
+            if (img.viewState && img.viewState.zoom > 1) { ev.preventDefault(); return; }
+            ev.dataTransfer.setData('text/lysa-grid-reorder', id);
+            ev.dataTransfer.effectAllowed = 'move';
+            cell.classList.add('dragging');
+        });
+        cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
+        cell.addEventListener('dragover', (ev) => {
+            if (!ev.dataTransfer.types.includes('text/lysa-grid-reorder')) return;
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'move';
+            const rect = cell.getBoundingClientRect();
+            const midX = rect.left + rect.width / 2;
+            cell.classList.toggle('drag-over-left', ev.clientX < midX);
+            cell.classList.toggle('drag-over-right', ev.clientX >= midX);
+        });
+        cell.addEventListener('dragleave', () => {
+            cell.classList.remove('drag-over-left', 'drag-over-right');
+        });
+        cell.addEventListener('drop', (ev) => {
+            cell.classList.remove('drag-over-left', 'drag-over-right');
+            const draggedId = ev.dataTransfer.getData('text/lysa-grid-reorder');
+            if (!draggedId || draggedId === id) return;
+            ev.preventDefault();
+            const fromIdx = state.openTabs.indexOf(draggedId);
+            if (fromIdx < 0) return;
+            state.openTabs.splice(fromIdx, 1);
+            const rect = cell.getBoundingClientRect();
+            let toIdx = state.openTabs.indexOf(id);
+            if (ev.clientX >= rect.left + rect.width / 2) toIdx += 1;
+            state.openTabs.splice(toIdx, 0, draggedId);
+            renderViewer();
+        });
+
+        const label = document.createElement('div');
+        label.className = 'grid-cell-label';
+        label.textContent = img.name;
+        cell.appendChild(label);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'grid-cell-close';
+        closeBtn.title = 'Hide from grid';
+        closeBtn.textContent = '×';
+        closeBtn.onclick = (e) => {
+            e.stopPropagation();
+            toggleImageVisibility(id);
+        };
+        cell.appendChild(closeBtn);
+
+        if (img._loaded && (img.rawData || img.originalImageData)) {
+            const cellCanvas = document.createElement('canvas');
+            const adjusted = applyImageAdjustments(img);
+            cellCanvas.width = img.width; cellCanvas.height = img.height;
+            cellCanvas.style.imageRendering = img.adjustments.interpolation === 'nearest' ? 'pixelated' : 'auto';
+            const ctx = cellCanvas.getContext('2d');
+            ctx.putImageData(adjusted, 0, 0);
+            cell.appendChild(cellCanvas);
+            applyCellViewTransform(cell, img);
+        } else {
+            // Show loading placeholder with thumbnail
+            const placeholder = document.createElement('div');
+            placeholder.style.cssText = 'display:flex; align-items:center; justify-content:center; width:100%; height:100%; position:relative;';
+            const thumb = document.createElement('img');
+            thumb.src = `${API}/api/images/${id}/thumbnail?size=400`;
+            thumb.style.cssText = 'max-width:100%; max-height:100%; opacity:0.5; object-fit:contain;';
+            placeholder.appendChild(thumb);
+            const spinner = document.createElement('div');
+            spinner.style.cssText = 'position:absolute; color:var(--accent); font-size:12px; background:rgba(0,0,0,0.6); padding:4px 10px; border-radius:4px;';
+            spinner.textContent = 'Loading...';
+            placeholder.appendChild(spinner);
+            cell.appendChild(placeholder);
+            needsLoad.push(id);
+        }
+
+        grid.appendChild(cell);
+    }
+
+    // Trigger lazy load for any unloaded images, then re-render
+    if (needsLoad.length > 0) {
+        Promise.all(needsLoad.map(id => ensureImageLoaded(id))).then(() => {
+            renderViewer();
+        });
+    }
+}
+
+
+// ===========================================================================
+//  Controls Sync (per-image)
+// ===========================================================================
+
+function syncControlsToActiveImage() {
+    const img = state.images[state.activeTab];
+    if (!img) return;
+    const adj = img.adjustments;
+
+    // Dynamically set slider range based on native bit depth
+    const dataMax = img.dataMax || 255;
+    const clMinEl = document.getElementById('clMin');
+    const clMaxEl = document.getElementById('clMax');
+    clMinEl.max = dataMax;
+    clMaxEl.max = dataMax;
+    const step = (dataMax > 255) ? Math.max(1, Math.round(dataMax / 1000)) : 1;
+    clMinEl.step = step;
+    clMaxEl.step = step;
+    clMinEl.value = adj.clMin;
+    document.getElementById('clMinVal').textContent = Math.round(adj.clMin);
+    clMaxEl.value = adj.clMax;
+    document.getElementById('clMaxVal').textContent = Math.round(adj.clMax);
+    document.getElementById('gamma').value = adj.gamma * 100;
+    document.getElementById('gammaVal').textContent = adj.gamma.toFixed(2);
+
+    document.getElementById('colormapSelect').value = adj.colormap;
+    document.getElementById('opacity').value = adj.opacity * 100;
+    document.getElementById('opacityVal').textContent = adj.opacity.toFixed(2);
+    document.getElementById('invertToggle').checked = adj.invert;
+    document.getElementById('visibleToggle').checked = adj.visible;
+    document.getElementById('blendingSelect').value = adj.blending;
+    document.getElementById('interpolationSelect').value = adj.interpolation;
+    document.getElementById('attenuation').value = adj.attenuation * 100;
+    document.getElementById('attenuationVal').textContent = adj.attenuation.toFixed(2);
+
+    document.querySelectorAll('.channel-toggle').forEach(el => {
+        el.classList.toggle('active', adj.channels[el.dataset.channel]);
+    });
+
+    renderMetadata(img.metadata);
+    renderColormapPreview(adj.colormap);
+    fetchAndDrawHistogram();
+
+    // Show per-channel sliders for composite images
+    buildChannelAdjustmentsPanel(img);
+}
+
+function onAdjustmentChange() {
+    const img = state.images[state.activeTab];
+    if (!img) return;
+
+    img.adjustments.clMin = parseFloat(document.getElementById('clMin').value);
+    img.adjustments.clMax = parseFloat(document.getElementById('clMax').value);
+    img.adjustments.gamma = parseFloat(document.getElementById('gamma').value) / 100;
+    img.adjustments.colormap = document.getElementById('colormapSelect').value;
+    img.adjustments.opacity = parseFloat(document.getElementById('opacity').value) / 100;
+    img.adjustments.invert = document.getElementById('invertToggle').checked;
+    img.adjustments.visible = document.getElementById('visibleToggle').checked;
+    img.adjustments.blending = document.getElementById('blendingSelect').value;
+    img.adjustments.interpolation = document.getElementById('interpolationSelect').value;
+    img.adjustments.attenuation = parseFloat(document.getElementById('attenuation').value) / 100;
+
+    // Enforce clMin <= clMax
+    if (img.adjustments.clMin > img.adjustments.clMax) {
+        img.adjustments.clMin = img.adjustments.clMax;
+        document.getElementById('clMin').value = img.adjustments.clMin;
+    }
+
+    // Update displays
+    document.getElementById('clMinVal').textContent = Math.round(img.adjustments.clMin);
+    document.getElementById('clMaxVal').textContent = Math.round(img.adjustments.clMax);
+    document.getElementById('gammaVal').textContent = img.adjustments.gamma.toFixed(2);
+    document.getElementById('opacityVal').textContent = img.adjustments.opacity.toFixed(2);
+    document.getElementById('attenuationVal').textContent = img.adjustments.attenuation.toFixed(2);
+
+    renderColormapPreview(img.adjustments.colormap);
+    renderViewer();
+}
+
+function resetAdjustments() {
+    const img = state.images[state.activeTab];
+    if (!img) return;
+    img.adjustments = defaultAdjustments();
+    syncControlsToActiveImage();
+    renderViewer();
+}
+
+function autoContrast(mode) {
+    const img = state.images[state.activeTab];
+    if (!img) return;
+    if (mode === 'full') {
+        img.adjustments.clMin = 0; img.adjustments.clMax = img.dataMax || 255;
+    } else if (mode === 'minmax') {
+        if (!img.stats) return;  // not loaded yet
+        img.adjustments.clMin = img.stats.min; img.adjustments.clMax = img.stats.max;
+    } else if (mode === 'auto') {
+        if (!img.stats) return;  // not loaded yet
+        img.adjustments.clMin = img.stats.p1; img.adjustments.clMax = img.stats.p99;
+    }
+    syncControlsToActiveImage();
+    renderViewer();
+}
+
+function toggleChannel(el) {
+    const img = state.images[state.activeTab];
+    if (!img) return;
+    const ch = el.dataset.channel;
+    img.adjustments.channels[ch] = !img.adjustments.channels[ch];
+    el.classList.toggle('active', img.adjustments.channels[ch]);
+    renderViewer();
+}
+
+
+// ===========================================================================
+//  Colormap Preview
+// ===========================================================================
+
+function renderColormapPreview(name) {
+    const canvas = document.getElementById('colormapPreview');
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.parentElement.clientWidth - 16;
+    canvas.height = 16;
+
+    if (!name || name === 'none') {
+        // Draw a gradient from black to white
+        const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+        grad.addColorStop(0, '#000'); grad.addColorStop(1, '#fff');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        return;
+    }
+
+    const table = getLutTable(name);
+    if (!table) return;
+    for (let x = 0; x < canvas.width; x++) {
+        const i = Math.round((x / canvas.width) * 255);
+        ctx.fillStyle = `rgb(${table[i*3]}, ${table[i*3+1]}, ${table[i*3+2]})`;
+        ctx.fillRect(x, 0, 1, canvas.height);
+    }
+}
+
+
+// ===========================================================================
+//  Histogram
+// ===========================================================================
+
+async function fetchAndDrawHistogram() {
+    if (!state.activeTab) return;
+    try {
+        const resp = await fetch(`${API}/api/images/${state.activeTab}/histogram?bins=256`);
+        const data = await resp.json();
+        drawHistogram(data.histograms);
+    } catch (err) { console.error('Histogram error:', err); }
+}
+
+function drawHistogram(histograms) {
+    const canvas = document.getElementById('histogramCanvas');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width - 16; canvas.height = rect.height - 16;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const colors = { red: '#e74c3c', green: '#2ecc71', blue: '#3498db', luminance: '#aaa', gray: '#aaa' };
+    const channels = Object.keys(histograms).filter(k => Array.isArray(histograms[k]));
+    let maxVal = 0;
+    for (const ch of channels) for (const v of histograms[ch]) maxVal = Math.max(maxVal, v);
+    if (maxVal === 0) return;
+
+    const w = canvas.width, h = canvas.height, binWidth = w / 256;
+
+    // Draw contrast limit markers
+    const img = state.images[state.activeTab];
+    if (img) {
+        const adj = img.adjustments;
+        const minX = (adj.clMin / 255) * w;
+        const maxX = (adj.clMax / 255) * w;
+
+        // Shaded regions outside limits
+        ctx.fillStyle = 'rgba(78, 205, 196, 0.1)';
+        ctx.fillRect(0, 0, minX, h);
+        ctx.fillRect(maxX, 0, w - maxX, h);
+
+        // Limit lines
+        ctx.strokeStyle = 'rgba(78, 205, 196, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(minX, 0); ctx.lineTo(minX, h); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(maxX, 0); ctx.lineTo(maxX, h); ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    for (const ch of channels) {
+        ctx.beginPath();
+        ctx.strokeStyle = colors[ch] || '#888';
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.7;
+        const vals = histograms[ch];
+        for (let i = 0; i < vals.length; i++) {
+            const x = i * binWidth;
+            const y = h - (vals[i] / maxVal) * h;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+        ctx.fillStyle = colors[ch] || '#888';
+        ctx.globalAlpha = 0.08;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+}
+
+
+// ===========================================================================
+//  Metadata
+// ===========================================================================
+
+function renderMetadata(meta) {
+    const table = document.getElementById('metadataTable');
+    if (!meta) { table.innerHTML = '<tr><td colspan="2">No image selected</td></tr>'; return; }
+    table.innerHTML = `
+        <tr><td>Filename</td><td>${meta.filename}</td></tr>
+        <tr><td>Dimensions</td><td>${meta.width} x ${meta.height}</td></tr>
+        <tr><td>Mode</td><td>${meta.mode}</td></tr>
+        <tr><td>Channels</td><td>${meta.channels} (${meta.bands.join(', ')})</td></tr>
+        <tr><td>Dtype</td><td>${meta.dtype}</td></tr>
+        <tr><td>Min / Max</td><td>${meta.min_value} / ${meta.max_value}</td></tr>
+        <tr><td>Mean</td><td>${meta.mean_value}</td></tr>
+        <tr><td>Size</td><td>${(meta.size_bytes / 1024).toFixed(1)} KB</td></tr>
+    `;
+}
+
+
+// ===========================================================================
+//  Tools
+// ===========================================================================
+
+function setTool(tool) {
+    state.tool = tool;
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+    // Update cursor on all grid cells
+    const cursor = tool === 'pan' ? 'grab' : 'crosshair';
+    document.querySelectorAll('.grid-cell canvas').forEach(c => c.style.cursor = cursor);
+}
+
+
+// ===========================================================================
+//  Zoom & Pan
+// ===========================================================================
+
+function _activeCellAndImg() {
+    if (state.activeViewTab !== 'grid') return null;
+    const cell = document.querySelector('.grid-cell.active-cell') || getCellForImageId(state.activeTab);
+    const img = cell ? state.images[getImageIdFromCell(cell)] : null;
+    return (cell && img) ? { cell, img } : null;
+}
+// Step factor for the +/- zoom buttons. Kept gentle so a click feels like a
+// nudge rather than a jump.
+const ZOOM_BUTTON_STEP = 1.10;
+function zoomIn() {
+    const ac = _activeCellAndImg();
+    if (ac) {
+        if (!ac.img.viewState) ac.img.viewState = { zoom: 1, panX: 0, panY: 0 };
+        ac.img.viewState.zoom = Math.min(ac.img.viewState.zoom * ZOOM_BUTTON_STEP, 20);
+        applyCellViewTransform(ac.cell, ac.img);
+        updateZoomDisplay();
+        return;
+    }
+    state.zoom = Math.min(state.zoom * ZOOM_BUTTON_STEP, 20); renderViewer(); updateZoomDisplay();
+}
+function zoomOut() {
+    const ac = _activeCellAndImg();
+    if (ac) {
+        if (!ac.img.viewState) ac.img.viewState = { zoom: 1, panX: 0, panY: 0 };
+        ac.img.viewState.zoom = Math.max(ac.img.viewState.zoom / ZOOM_BUTTON_STEP, 0.05);
+        applyCellViewTransform(ac.cell, ac.img);
+        updateZoomDisplay();
+        return;
+    }
+    state.zoom = Math.max(state.zoom / ZOOM_BUTTON_STEP, 0.05); renderViewer(); updateZoomDisplay();
+}
+function zoomFit() {
+    const ac = _activeCellAndImg();
+    if (ac) {
+        ac.img.viewState = { zoom: 1, panX: 0, panY: 0 };
+        applyCellViewTransform(ac.cell, ac.img);
+        updateZoomDisplay();
+        return;
+    }
+    state.zoom = 1; state.panX = 0; state.panY = 0; renderViewer(); updateZoomDisplay();
+}
+function updateZoomDisplay() {
+    const ac = _activeCellAndImg();
+    const z = ac ? ac.img.viewState.zoom : state.zoom;
+    document.getElementById('zoomLevel').textContent = `${Math.round(z * 100)}%`;
+}
+
+const mainCanvas = document.getElementById('mainCanvas');
+
+// --- Tool interaction on grid cells ---
+// We delegate events on the canvas area so they work with dynamically-created grid-cell canvases.
+
+function getCanvasFromEvent(e) {
+    // Find the canvas inside a grid-cell that the user is interacting with
+    const cell = e.target.closest('.grid-cell');
+    if (cell) return cell.querySelector('canvas');
+    // Also support the mainCanvas (single-image tab view)
+    if (e.target.tagName === 'CANVAS') return e.target;
+    return null;
+}
+
+function getImageIdFromCanvas(canvas) {
+    // For mainCanvas in single-image tab, the active view tab IS the image ID
+    if (canvas.id === 'mainCanvas' && state.activeViewTab !== 'grid') {
+        return state.activeViewTab;
+    }
+    // For grid cells, look up by label
+    const cell = canvas.closest('.grid-cell');
+    if (cell) return getImageIdFromCell(cell);
+    return null;
+}
+
+function getImageIdFromCell(cell) {
+    const label = cell.querySelector('.grid-cell-label');
+    if (!label) return null;
+    const imgName = label.textContent.replace(/^\[\d+\]\s*/, ''); // strip merge numbering
+    return Object.keys(state.images).find(k => state.images[k].name === imgName) || null;
+}
+
+const canvasArea = document.getElementById('canvasArea');
+
+// Wheel zoom: gentle, exponential in deltaY. The base of 0.0015 gives ~1.04
+// per "notch" (a typical mouse wheel notch is deltaY ≈ 100), so a single tick
+// is a 4% zoom change instead of the old 25%.
+const WHEEL_ZOOM_BASE = 0.0015;
+canvasArea.addEventListener('wheel', e => {
+    e.preventDefault();
+    // Trackpad pixel-deltas are much smaller than mouse-wheel line-deltas;
+    // normalize so both feel similar.
+    let dy = e.deltaY;
+    if (e.deltaMode === 1) dy *= 16;       // line mode
+    else if (e.deltaMode === 2) dy *= 100; // page mode
+    const factor = Math.exp(-dy * WHEEL_ZOOM_BASE);
+
+    // If hovering over a grid cell, zoom that cell only
+    const cell = e.target.closest('.grid-cell');
+    if (cell) {
+        const id = getImageIdFromCell(cell);
+        const img = state.images[id];
+        if (img) {
+            if (!img.viewState) img.viewState = { zoom: 1, panX: 0, panY: 0 };
+            img.viewState.zoom = Math.max(0.1, Math.min(20, img.viewState.zoom * factor));
+            // Update draggable: disable reorder when zoomed in so pan works
+            cell.draggable = img.viewState.zoom <= 1;
+            applyCellViewTransform(cell, img);
+            updateZoomDisplay();
+            return;
+        }
+    }
+    // Fallback: global zoom (single-image tab view)
+    state.zoom = Math.max(0.05, Math.min(20, state.zoom * factor));
+    renderViewer();
+    updateZoomDisplay();
+});
+
+canvasArea.addEventListener('mousedown', e => {
+    const canvas = getCanvasFromEvent(e);
+    if (!canvas) return;
+
+    const cell = canvas.closest('.grid-cell');
+    if (cell) {
+        const cellId = getImageIdFromCell(cell);
+        if (cellId && cellId !== state.activeTab) {
+            state.activeTab = cellId;
+            // Update active-cell highlight without rebuilding DOM
+            document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('active-cell'));
+            cell.classList.add('active-cell');
+            syncControlsToActiveImage();
+            updateInfoBar();
+        }
+    }
+
+    // Per-cell pan: allow dragging to move a zoomed-in image regardless of
+    // the active tool. When the image is at zoom=1, only pan with the pan tool.
+    if (cell) {
+        const id = getImageIdFromCell(cell);
+        const img = state.images[id];
+        if (img) {
+            if (!img.viewState) img.viewState = { zoom: 1, panX: 0, panY: 0 };
+            const isZoomed = img.viewState.zoom > 1;
+            if (state.tool === 'pan' || isZoomed) {
+                state._cellPan = {
+                    cell,
+                    img,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    panX0: img.viewState.panX,
+                    panY0: img.viewState.panY,
+                };
+                canvas.style.cursor = 'grabbing';
+            }
+        }
+    }
+    if (!state._cellPan) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+        state.drawStart = { x: Math.round((e.clientX - rect.left) * scaleX), y: Math.round((e.clientY - rect.top) * scaleY) };
+        state.isDrawing = true;
+        state._activeCanvas = canvas;
+    }
+});
+
+canvasArea.addEventListener('mousemove', e => {
+    // Per-cell panning takes priority
+    if (state._cellPan) {
+        const cp = state._cellPan;
+        cp.img.viewState.panX = cp.panX0 + (e.clientX - cp.startX);
+        cp.img.viewState.panY = cp.panY0 + (e.clientY - cp.startY);
+        applyCellViewTransform(cp.cell, cp.img);
+        return;
+    }
+    const canvas = getCanvasFromEvent(e) || state._activeCanvas;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const px = Math.floor((e.clientX - rect.left) * scaleX);
+    const py = Math.floor((e.clientY - rect.top) * scaleY);
+
+    if (px >= 0 && py >= 0 && px < canvas.width && py < canvas.height) {
+        try {
+            // Find the image associated with this canvas so we can show native bit-depth values
+            let img = null;
+            const cell = canvas.closest && canvas.closest('.grid-cell');
+            if (cell && cell.dataset && cell.dataset.imageId) {
+                img = state.images[cell.dataset.imageId];
+            }
+            if (!img) img = state.images[state.activeTab];
+
+            if (img && img.rawData && px < img.rawData.width && py < img.rawData.height) {
+                const raw = img.rawData;
+                const i = py * raw.width + px;
+                const fmt = (v) => (Number.isInteger(v) ? v : v.toFixed(3));
+                if (raw.channels === 1) {
+                    document.getElementById('coordsInfo').textContent =
+                        `X: ${px}  Y: ${py}  |  Value: ${fmt(raw.data[i])}`;
+                } else {
+                    const base = i * raw.channels;
+                    const parts = [];
+                    for (let c = 0; c < raw.channels; c++) parts.push(`C${c}: ${fmt(raw.data[base + c])}`);
+                    document.getElementById('coordsInfo').textContent =
+                        `X: ${px}  Y: ${py}  |  ${parts.join('  ')}`;
+                }
+            } else {
+                const ctx = canvas.getContext('2d');
+                const pixel = ctx.getImageData(px, py, 1, 1).data;
+                document.getElementById('coordsInfo').textContent =
+                    `X: ${px}  Y: ${py}  |  R: ${pixel[0]}  G: ${pixel[1]}  B: ${pixel[2]}  A: ${pixel[3]}`;
+            }
+        } catch (err) { /* cross-origin guard */ }
+    }
+
+    if (state.isDrawing && state.drawStart && state._activeCanvas) {
+        const aRect = state._activeCanvas.getBoundingClientRect();
+        const aScaleX = state._activeCanvas.width / aRect.width;
+        const aScaleY = state._activeCanvas.height / aRect.height;
+        state.drawEnd = { x: Math.round((e.clientX - aRect.left) * aScaleX), y: Math.round((e.clientY - aRect.top) * aScaleY) };
+
+        // Re-render the active cell's image and overlay
+        const img = state.images[state.activeTab];
+        if (img) {
+            const adjusted = applyImageAdjustments(img);
+            const ctx = state._activeCanvas.getContext('2d');
+            ctx.putImageData(adjusted, 0, 0);
+            drawToolOverlayOn(state._activeCanvas);
+        }
+    }
+});
+
+canvasArea.addEventListener('mouseup', async e => {
+    // End per-cell pan
+    if (state._cellPan) {
+        const cv = state._cellPan.cell.querySelector('canvas');
+        if (cv) cv.style.cursor = '';
+        state._cellPan = null;
+        return;
+    }
+    if (state.isDrawing && state.drawStart && state._activeCanvas) {
+        const rect = state._activeCanvas.getBoundingClientRect();
+        const scaleX = state._activeCanvas.width / rect.width, scaleY = state._activeCanvas.height / rect.height;
+        state.drawEnd = { x: Math.round((e.clientX - rect.left) * scaleX), y: Math.round((e.clientY - rect.top) * scaleY) };
+        state.isDrawing = false;
+        await executeToolAction();
+        state._activeCanvas = null;
+    }
+});
+
+// Double-click on a grid cell to open image in its own tab
+canvasArea.addEventListener('dblclick', e => {
+    if (state.mergeMode) return;
+    const canvas = getCanvasFromEvent(e);
+    if (!canvas) return;
+    const cell = canvas.closest('.grid-cell');
+    if (!cell) return;
+    const cellId = getImageIdFromCell(cell);
+    if (!cellId) return;
+    openImageTab(cellId);
+});
+
+function drawToolOverlay() {
+    // Legacy fallback — overlay on active grid cell canvas
+    if (!state._activeCanvas) return;
+    drawToolOverlayOn(state._activeCanvas);
+}
+
+function drawToolOverlayOn(canvas) {
+    if (!state.drawStart || !state.drawEnd) return;
+    const ctx = canvas.getContext('2d');
+    const s = state.drawStart, end = state.drawEnd;
+    ctx.save();
+    ctx.strokeStyle = '#4ecdc4'; ctx.lineWidth = 2; ctx.setLineDash([6, 3]);
+    if (state.tool === 'roi') {
+        const x = Math.min(s.x, end.x), y = Math.min(s.y, end.y);
+        const w = Math.abs(end.x - s.x), h = Math.abs(end.y - s.y);
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(78, 205, 196, 0.1)'; ctx.fillRect(x, y, w, h);
+    } else if (state.tool === 'line' || state.tool === 'measure') {
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+        ctx.fillStyle = '#4ecdc4';
+        ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(end.x, end.y, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+}
+
+async function executeToolAction() {
+    if (!state.activeTab || !state.drawStart || !state.drawEnd) return;
+    const s = state.drawStart, end = state.drawEnd;
+    const section = document.getElementById('analysisSection');
+    const results = document.getElementById('analysisResults');
+    section.style.display = '';
+
+    if (state.tool === 'roi') {
+        const x = Math.min(s.x, end.x), y = Math.min(s.y, end.y);
+        const w = Math.abs(end.x - s.x), h = Math.abs(end.y - s.y);
+        if (w < 2 || h < 2) return;
+        const resp = await fetch(`${API}/api/images/${state.activeTab}/roi-stats`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ x, y, width: w, height: h }),
+        });
+        const data = await resp.json();
+        results.innerHTML = `
+            <table class="metadata-table">
+                <tr><td>Area</td><td>${data.area_pixels} px</td></tr>
+                <tr><td>Min</td><td>${data.min}</td></tr>
+                <tr><td>Max</td><td>${data.max}</td></tr>
+                <tr><td>Mean</td><td>${data.mean}</td></tr>
+                <tr><td>Std Dev</td><td>${data.std}</td></tr>
+                <tr><td>Median</td><td>${data.median}</td></tr>
+                ${data.red_mean !== undefined ? `
+                <tr><td>R Mean</td><td>${data.red_mean} (&sigma; ${data.red_std})</td></tr>
+                <tr><td>G Mean</td><td>${data.green_mean} (&sigma; ${data.green_std})</td></tr>
+                <tr><td>B Mean</td><td>${data.blue_mean} (&sigma; ${data.blue_std})</td></tr>` : ''}
+            </table>`;
+    } else if (state.tool === 'line') {
+        const resp = await fetch(`${API}/api/images/${state.activeTab}/line-profile`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ x1: s.x, y1: s.y, x2: end.x, y2: end.y, line_width: 1 }),
+        });
+        const data = await resp.json();
+        results.innerHTML = `
+            <div style="font-size:12px; margin-bottom:6px;">Line Profile (${data.length_pixels} px)</div>
+            <canvas id="lineProfileCanvas" width="280" height="100" style="background:var(--bg-primary); border-radius:6px; width:100%;"></canvas>`;
+        drawLineProfile(data.profiles);
+    } else if (state.tool === 'measure') {
+        const resp = await fetch(`${API}/api/images/${state.activeTab}/measure`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ x1: s.x, y1: s.y, x2: end.x, y2: end.y, pixel_size: 1.0, pixel_unit: 'px' }),
+        });
+        const data = await resp.json();
+        results.innerHTML = `
+            <table class="metadata-table">
+                <tr><td>Distance</td><td>${data.distance_pixels} px</td></tr>
+                <tr><td>Angle</td><td>${data.angle_degrees}&deg;</td></tr>
+                <tr><td>&Delta;X</td><td>${data.dx} px</td></tr>
+                <tr><td>&Delta;Y</td><td>${data.dy} px</td></tr>
+            </table>`;
+    }
+    // Re-render the active canvas with overlay (grid cell or mainCanvas)
+    let targetCanvas = document.querySelector('.grid-cell.active-cell canvas');
+    if (!targetCanvas && state.activeViewTab !== 'grid') {
+        targetCanvas = document.getElementById('mainCanvas');
+    }
+    if (targetCanvas) {
+        const img = state.images[state.activeTab];
+        if (img && (img.rawData || img.originalImageData)) {
+            const adjusted = applyImageAdjustments(img);
+            targetCanvas.getContext('2d').putImageData(adjusted, 0, 0);
+            drawToolOverlayOn(targetCanvas);
+        }
+    }
+}
+
+function drawLineProfile(profiles) {
+    const canvas = document.getElementById('lineProfileCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const colors = { red: '#e74c3c', green: '#2ecc71', blue: '#3498db', luminance: '#ccc', gray: '#ccc' };
+    for (const [ch, vals] of Object.entries(profiles)) {
+        ctx.beginPath(); ctx.strokeStyle = colors[ch] || '#888'; ctx.lineWidth = 1.5;
+        const step = canvas.width / vals.length;
+        for (let i = 0; i < vals.length; i++) {
+            const x = i * step, y = canvas.height - (vals[i] / 255) * canvas.height;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+}
+
+
+// ===========================================================================
+//  Info Bar
+// ===========================================================================
+
+function updateInfoBar() {
+    const img = state.images[state.activeTab];
+    if (!img) { document.getElementById('imageInfo').textContent = ''; return; }
+    const m = img.metadata;
+    const bitInfo = m.bit_depth && m.bit_depth > 8 ? `  |  ${m.bit_depth}-bit (${m.dtype})` : '';
+    const rangeInfo = m.bit_depth && m.bit_depth > 8 ? `  |  range: ${m.min_value}–${m.max_value}` : '';
+    document.getElementById('imageInfo').textContent =
+        `${m.width} x ${m.height}  |  ${m.mode}${bitInfo}${rangeInfo}  |  ${img.name}`;
+    updateZoomDisplay();
+}
+
+
+// ===========================================================================
+//  Collapsible Sections
+// ===========================================================================
+
+document.querySelectorAll('.panel-section h3').forEach(h3 => {
+    h3.addEventListener('click', e => {
+        if (e.target.classList.contains('reset-btn')) return;
+        h3.closest('.panel-section').classList.toggle('collapsed');
+    });
+});
+
+
+// ===========================================================================
+//  Keyboard Shortcuts
+// ===========================================================================
+
+document.addEventListener('keydown', e => {
+    // Don't trigger on inputs
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+    if (e.key === '+' || e.key === '=') zoomIn();
+    if (e.key === '-') zoomOut();
+    if (e.key === '0') zoomFit();
+    if (e.key === 'Escape') resetAdjustments();
+    if (e.key === 'h') setTool('pan');
+    if (e.key === 'r' && !e.ctrlKey) setTool('roi');
+    if (e.key === 'l') setTool('line');
+    if (e.key === 'm') setTool('measure');
+
+    // Switch tabs
+    if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key) - 1;
+        if (idx < state.openTabs.length) { state.activeTab = state.openTabs[idx]; renderAll(); }
+    }
+    // Ctrl+Tab / Ctrl+Shift+Tab for tab cycling
+    if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault();
+        const idx = state.openTabs.indexOf(state.activeTab);
+        const next = e.shiftKey
+            ? (idx - 1 + state.openTabs.length) % state.openTabs.length
+            : (idx + 1) % state.openTabs.length;
+        state.activeTab = state.openTabs[next];
+        renderAll();
+    }
+});
+
+
+// ===========================================================================
+//  Folder Loading
+// ===========================================================================
+
+function showFolderDialog() {
+    const dlg = document.getElementById('folderDialog');
+    dlg.style.display = dlg.style.display === 'none' ? 'block' : 'none';
+    document.getElementById('folderStatus').textContent = '';
+}
+
+async function loadFolder() {
+    const folderPath = document.getElementById('folderPath').value.trim();
+    if (!folderPath) { alert('Enter a folder path'); return; }
+
+    const pattern = document.getElementById('folderPattern').value.trim() || null;
+    const statusEl = document.getElementById('folderStatus');
+    statusEl.textContent = 'Loading...';
+
+    try {
+        const resp = await fetch(`${API}/api/load-folder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: folderPath, pattern }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            statusEl.textContent = `Error: ${data.detail || 'Failed'}`;
+            return;
+        }
+
+        statusEl.textContent = `Loaded ${data.loaded} images` + (data.errors > 0 ? ` (${data.errors} errors)` : '');
+
+        // Register metadata only (fast — no pixel loading)
+        for (const item of data.images) {
+            if (item.error) continue;
+            registerImageMetadata(item.image_id, item.metadata);
+        }
+        if (data.images.length > 0) {
+            const firstValid = data.images.find(i => !i.error);
+            if (firstValid) state.activeTab = firstValid.image_id;
+        }
+
+        document.getElementById('folderDialog').style.display = 'none';
+        renderAll();
+
+    } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+    }
+}
+
+// Register image metadata only (no pixel data) — fast, for sidebar preview
+function registerImageMetadata(imageId, metadata) {
+    state.images[imageId] = {
+        id: imageId,
+        name: metadata.filename,
+        metadata: metadata,
+        adjustments: defaultAdjustments(),
+        viewState: { zoom: 1, panX: 0, panY: 0 },  // per-image zoom/pan in grid view
+        originalImageData: null,   // lazy — loaded on demand
+        width: metadata.width,
+        height: metadata.height,
+        stats: null,               // lazy — computed when pixels load
+        _loaded: false,            // flag: pixel data loaded?
+        _loading: false,           // flag: currently loading?
+    };
+}
+
+// Ensure pixel data is loaded for an image (fetches if needed)
+async function ensureImageLoaded(imageId) {
+    const entry = state.images[imageId];
+    if (!entry || entry._loaded) return entry;
+    if (entry._loading) {
+        // Already loading — wait for it
+        await new Promise(resolve => {
+            const check = setInterval(() => {
+                if (entry._loaded || !entry._loading) { clearInterval(check); resolve(); }
+            }, 50);
+        });
+        return entry;
+    }
+
+    entry._loading = true;
+    try {
+        // Fetch the original pixel data preserving native bit depth
+        // (works for both normal images and composites — composites now
+        // store their merged array at its native dtype server-side).
+        const resp = await fetch(`${API}/api/images/${imageId}/raw_data?t=${Date.now()}`);
+        if (!resp.ok) throw new Error('Failed to fetch raw pixel data');
+        const W = parseInt(resp.headers.get('X-Width'));
+        const H = parseInt(resp.headers.get('X-Height'));
+        const C = parseInt(resp.headers.get('X-Channels'));
+        const dtype = (resp.headers.get('X-Dtype') || 'uint8').toLowerCase();
+        const buf = await resp.arrayBuffer();
+
+        let data;
+        let dataMax;
+        if (dtype === 'uint16') { data = new Uint16Array(buf); dataMax = 65535; }
+        else if (dtype === 'int16') { data = new Int16Array(buf); dataMax = 32767; }
+        else if (dtype === 'uint32') { data = new Uint32Array(buf); dataMax = 4294967295; }
+        else if (dtype === 'float32') { data = new Float32Array(buf); dataMax = 1.0; }
+        else if (dtype === 'float64') { data = new Float64Array(buf); dataMax = 1.0; }
+        else { data = new Uint8Array(buf); dataMax = 255; }
+
+        entry.rawData = { width: W, height: H, channels: C, dtype, data };
+        entry.width = W;
+        entry.height = H;
+        entry.dataMax = dataMax;
+
+        // Pull stats from metadata (computed server-side on the original, not the stretch)
+        const md = entry.metadata || {};
+        entry.stats = {
+            p1: (md.percentile_1 !== undefined) ? md.percentile_1 : 0,
+            p99: (md.percentile_99 !== undefined) ? md.percentile_99 : dataMax,
+            min: (md.min_value !== undefined) ? md.min_value : 0,
+            max: (md.max_value !== undefined) ? md.max_value : dataMax,
+        };
+
+        // Initialize contrast limits to the actual data range instead of 0..255.
+        // Using Min/Max preserves the look of the original: no percentile stretch,
+        // no noise amplification.
+        if (!entry._adjustmentsInitialized) {
+            entry.adjustments.clMin = Math.round(entry.stats.min);
+            entry.adjustments.clMax = Math.round(entry.stats.max);
+            entry._adjustmentsInitialized = true;
+        }
+
+        // Build a placeholder originalImageData so legacy code paths that read
+        // .width / .height / .data keep working. Its contents aren't what's
+        // drawn — the live render always reads from entry.rawData.
+        const placeholder = new Uint8ClampedArray(W * H * 4);
+        entry.originalImageData = new ImageData(placeholder, W, H);
+
+        entry._loaded = true;
+    } finally {
+        entry._loading = false;
+    }
+    return entry;
+}
+
+// Full load: register + fetch pixels (used for single image uploads that show immediately)
+async function loadImageIntoFrontend(imageId, metadata, { showInGrid = true } = {}) {
+    if (!state.images[imageId]) {
+        registerImageMetadata(imageId, metadata);
+    }
+
+    if (showInGrid) {
+        // Fetch pixels immediately since it'll be displayed
+        await ensureImageLoaded(imageId);
+        if (!state.openTabs.includes(imageId)) state.openTabs.push(imageId);
+        state.activeTab = imageId;
+        state.parallelViews = state.openTabs.length;
+        document.getElementById('parallelViewCount').textContent = state.parallelViews;
+    } else {
+        // Sidebar only — just metadata, no pixels yet
+        state.activeTab = imageId;
+    }
+}
+
+
+// ===========================================================================
+//  LIF File Loading
+// ===========================================================================
+
+function showLifDialog() {
+    const dlg = document.getElementById('lifDialog');
+    dlg.style.display = dlg.style.display === 'none' ? 'block' : 'none';
+    document.getElementById('lifStatus').textContent = '';
+    document.getElementById('lifImageList').innerHTML = '';
+}
+
+async function lifPreview() {
+    const lifPath = document.getElementById('lifPath').value.trim();
+    if (!lifPath) { alert('Enter a LIF file path'); return; }
+
+    const statusEl = document.getElementById('lifStatus');
+    const listEl = document.getElementById('lifImageList');
+    statusEl.textContent = 'Reading LIF file...';
+    listEl.innerHTML = '';
+
+    try {
+        const resp = await fetch(`${API}/api/lif-info?path=${encodeURIComponent(lifPath)}`);
+        const data = await resp.json();
+        if (!resp.ok) { statusEl.textContent = `Error: ${data.detail || 'Failed'}`; return; }
+
+        statusEl.textContent = `Found ${data.num_images} images`;
+        listEl.innerHTML = data.images.map(img => {
+            const sizeStr = Object.entries(img.sizes).map(([k,v]) => `${k}:${v}`).join(' ');
+            return `<div style="padding:3px 0; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:6px;">
+                <input type="checkbox" class="lif-check" data-idx="${img.index}" checked>
+                <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${img.name}">${img.name}</span>
+                <span style="color:var(--text-secondary); font-size:10px;">${sizeStr} ${img.dtype}</span>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+    }
+}
+
+async function loadLif() {
+    const lifPath = document.getElementById('lifPath').value.trim();
+    if (!lifPath) { alert('Enter a LIF file path'); return; }
+
+    const statusEl = document.getElementById('lifStatus');
+    statusEl.textContent = 'Loading...';
+
+    // Get selected indices from checkboxes (if any checked)
+    const checks = document.querySelectorAll('.lif-check:checked');
+    let indices = null;
+    if (checks.length > 0) {
+        indices = Array.from(checks).map(c => parseInt(c.dataset.idx));
+    }
+
+    try {
+        const resp = await fetch(`${API}/api/load-lif`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: lifPath, image_indices: indices }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            statusEl.textContent = `Error: ${data.detail || 'Failed'}`;
+            return;
+        }
+
+        statusEl.textContent = `Loaded ${data.loaded} images` + (data.errors > 0 ? ` (${data.errors} errors)` : '');
+
+        for (const item of data.images) {
+            if (item.error) continue;
+            registerImageMetadata(item.image_id, item.metadata);
+        }
+
+        document.getElementById('lifDialog').style.display = 'none';
+        renderAll();
+
+    } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+    }
+}
+
+
+// ===========================================================================
+//  Merge: Multi-select + Channel Merge
+// ===========================================================================
+
+state.mergeMode = false;
+state.mergeSelected = [];  // array of image ids (unlimited)
+
+const MERGE_DEFAULT_CHANNELS = ['green', 'red', 'blue', 'cyan', 'magenta', 'yellow', 'gray'];
+
+function toggleMergeSelect() {
+    if (state.mergeMode) {
+        cancelMergeSelect();
+    } else {
+        if (state.openTabs.length < 2) {
+            alert('Need at least 2 images to merge.');
+            return;
+        }
+        state.mergeMode = true;
+        state.mergeSelected = [];
+        document.getElementById('mergeBanner').classList.add('active');
+        document.getElementById('mergeBtn').classList.add('btn-primary');
+        updateMergeBadges();
+        renderAll();
+    }
+}
+
+function cancelMergeSelect() {
+    state.mergeMode = false;
+    state.mergeSelected = [];
+    document.getElementById('mergeBanner').classList.remove('active');
+    document.getElementById('mergeBtn').classList.remove('btn-primary');
+    document.getElementById('mergeDoneBtn').style.display = 'none';
+    renderAll();
+}
+
+function mergeSelectImage(id) {
+    if (!state.mergeMode) return;
+
+    const idx = state.mergeSelected.indexOf(id);
+    if (idx >= 0) {
+        state.mergeSelected.splice(idx, 1);  // deselect
+    } else {
+        state.mergeSelected.push(id);  // no limit
+    }
+
+    updateMergeBadges();
+    renderAll();
+}
+
+function updateMergeBadges() {
+    const container = document.getElementById('mergeBadges');
+    const s = state.mergeSelected;
+    container.innerHTML = '';
+
+    s.forEach((id, i) => {
+        const img = state.images[id];
+        const badge = document.createElement('span');
+        badge.className = 'sel-badge filled';
+        badge.innerHTML = `<span class="dot"></span> <span class="sel-name">${img ? img.name : 'Image ' + (i+1)}</span>`;
+        badge.style.cursor = 'pointer';
+        badge.title = 'Click to remove';
+        badge.onclick = () => { mergeSelectImage(id); };
+        container.appendChild(badge);
+    });
+
+    // Show/hide "Merge Selected" button
+    const doneBtn = document.getElementById('mergeDoneBtn');
+    const countEl = document.getElementById('mergeSelCount');
+    countEl.textContent = `${s.length} selected`;
+    doneBtn.style.display = s.length >= 2 ? '' : 'none';
+}
+
+function openMergeModal() {
+    if (state.mergeSelected.length < 2) { alert('Select at least 2 images.'); return; }
+
+    // Build preview thumbnails
+    const previewContainer = document.getElementById('mergePreviewContainer');
+    previewContainer.innerHTML = '';
+    state.mergeSelected.forEach((id, i) => {
+        if (i > 0) {
+            const arrow = document.createElement('span');
+            arrow.className = 'merge-preview-arrow';
+            arrow.textContent = '+';
+            previewContainer.appendChild(arrow);
+        }
+        const thumb = document.createElement('img');
+        thumb.src = `${API}/api/images/${id}/thumbnail?size=240`;
+        thumb.alt = `Image ${i + 1}`;
+        previewContainer.appendChild(thumb);
+    });
+    const eqArrow = document.createElement('span');
+    eqArrow.className = 'merge-preview-arrow';
+    eqArrow.textContent = '=';
+    previewContainer.appendChild(eqArrow);
+    const resultCanvas = document.createElement('canvas');
+    resultCanvas.id = 'mergePreviewResult';
+    resultCanvas.width = 120; resultCanvas.height = 120;
+    previewContainer.appendChild(resultCanvas);
+
+    // Build channel assignment rows
+    const rowsContainer = document.getElementById('mergeChannelRows');
+    rowsContainer.innerHTML = '';
+    const channelOpts = [
+        {v: 'original', l: 'Original (No LUT)'},
+        {v: 'green', l: 'Green (GFP)'}, {v: 'red', l: 'Red (RFP/mCherry)'}, {v: 'blue', l: 'Blue (DAPI)'},
+        {v: 'cyan', l: 'Cyan'}, {v: 'magenta', l: 'Magenta'}, {v: 'yellow', l: 'Yellow'},
+        {v: 'gray', l: 'Gray (grayscale)'}, {v: 'white', l: 'White (all)'},
+    ];
+
+    state.mergeSelected.forEach((id, i) => {
+        const img = state.images[id];
+        const row = document.createElement('div');
+        row.className = 'merge-ch-row';
+
+        const thumb = document.createElement('img');
+        thumb.className = 'ch-thumb';
+        thumb.src = `${API}/api/images/${id}/thumbnail?size=96`;
+        row.appendChild(thumb);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'ch-name';
+        nameSpan.textContent = img ? img.name : id;
+        nameSpan.title = img ? img.name : id;
+        row.appendChild(nameSpan);
+
+        const sel = document.createElement('select');
+        sel.id = `mergeCh_${i}`;
+        sel.onchange = () => updateMergePreview();
+        channelOpts.forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt.v; o.textContent = opt.l;
+            sel.appendChild(o);
+        });
+        // Default assignment: cycle through green, red, blue, ...
+        sel.value = MERGE_DEFAULT_CHANNELS[i % MERGE_DEFAULT_CHANNELS.length];
+        row.appendChild(sel);
+
+        const slider = document.createElement('input');
+        slider.type = 'range'; slider.id = `mergeW_${i}`;
+        slider.min = '0'; slider.max = '200'; slider.value = '100'; slider.step = '5';
+        slider.oninput = () => updateMergePreview();
+        slider.style.flex = '1';
+        row.appendChild(slider);
+
+        const valSpan = document.createElement('span');
+        valSpan.className = 'ch-weight-val';
+        valSpan.id = `mergeWVal_${i}`;
+        valSpan.textContent = '1.00';
+        row.appendChild(valSpan);
+
+        rowsContainer.appendChild(row);
+    });
+
+    document.getElementById('mergeName').value = '';
+    document.getElementById('mergeModal').classList.add('active');
+    updateMergePreview();
+}
+
+function closeMergeModal() {
+    document.getElementById('mergeModal').classList.remove('active');
+    cancelMergeSelect();
+}
+
+function updateMergePreview() {
+    const chMap = {
+        red: [1,0,0], green: [0,1,0], blue: [0,0,1],
+        cyan: [0,1,1], magenta: [1,0,1], yellow: [1,1,0], gray: [1,1,1], white: [1,1,1]
+    };
+
+    if (state.mergeSelected.length < 2) return;
+
+    // Read current channel/weight for each
+    const specs = state.mergeSelected.map((id, i) => {
+        const chSel = document.getElementById(`mergeCh_${i}`);
+        const wSlider = document.getElementById(`mergeW_${i}`);
+        const wVal = document.getElementById(`mergeWVal_${i}`);
+        const w = wSlider ? parseFloat(wSlider.value) / 100 : 1.0;
+        if (wVal) wVal.textContent = w.toFixed(2);
+        return { id, channel: chSel ? chSel.value : 'green', weight: w };
+    });
+
+    const previewSize = 120;
+    const canvas = document.getElementById('mergePreviewResult');
+    if (!canvas) return;
+    canvas.width = previewSize; canvas.height = previewSize;
+    const ctx = canvas.getContext('2d');
+
+    function getScaledRGBA(imgData, size) {
+        const tmpC = document.createElement('canvas');
+        tmpC.width = size; tmpC.height = size;
+        const tmpCtx = tmpC.getContext('2d');
+        const srcC = document.createElement('canvas');
+        srcC.width = imgData.width; srcC.height = imgData.height;
+        srcC.getContext('2d').putImageData(imgData, 0, 0);
+        tmpCtx.drawImage(srcC, 0, 0, size, size);
+        return tmpCtx.getImageData(0, 0, size, size);
+    }
+
+    const sources = specs.map(s => {
+        const img = state.images[s.id];
+        if (!img) return null;
+        const rgba = getScaledRGBA(img.originalImageData, previewSize);
+        const gray = new Float32Array(previewSize * previewSize);
+        for (let i = 0; i < gray.length; i++) {
+            gray[i] = (0.299 * rgba.data[i*4] + 0.587 * rgba.data[i*4+1] + 0.114 * rgba.data[i*4+2]);
+        }
+        return { rgba, gray };
+    });
+
+    const out = ctx.createImageData(previewSize, previewSize);
+    const pxCount = previewSize * previewSize;
+
+    for (let i = 0; i < pxCount; i++) {
+        let r = 0, g = 0, b = 0;
+        specs.forEach((s, si) => {
+            const src = sources[si];
+            if (!src) return;
+            if (s.channel === 'original' || s.channel === 'none') {
+                // Preserve source RGB directly, scaled by weight
+                r += src.rgba.data[i*4]     * s.weight;
+                g += src.rgba.data[i*4 + 1] * s.weight;
+                b += src.rgba.data[i*4 + 2] * s.weight;
+            } else {
+                const v = src.gray[i] * s.weight;
+                const m = chMap[s.channel] || [0,1,0];
+                r += v * m[0]; g += v * m[1]; b += v * m[2];
+            }
+        });
+        out.data[i*4]     = Math.min(255, Math.round(r));
+        out.data[i*4 + 1] = Math.min(255, Math.round(g));
+        out.data[i*4 + 2] = Math.min(255, Math.round(b));
+        out.data[i*4 + 3] = 255;
+    }
+    ctx.putImageData(out, 0, 0);
+}
+
+async function executeMerge() {
+    if (state.mergeSelected.length < 2) return;
+
+    // Gather specs from the dynamic rows
+    const channels = state.mergeSelected.map((id, i) => {
+        const chSel = document.getElementById(`mergeCh_${i}`);
+        const wSlider = document.getElementById(`mergeW_${i}`);
+        return {
+            image_id: id,
+            channel: chSel ? chSel.value : 'green',
+            weight: wSlider ? parseFloat(wSlider.value) / 100 : 1.0,
+        };
+    });
+
+    const blendMode = document.getElementById('mergeBlendMode').value;
+    const params = {
+        channels,
+        blend_mode: blendMode,
+        name: document.getElementById('mergeName').value || null,
+    };
+
+    try {
+        // Make sure source pixels are loaded — needed for live per-channel re-render later
+        await Promise.all(state.mergeSelected.map(id => ensureImageLoaded(id)));
+
+        const resp = await fetch(`${API}/api/merge-n`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+        });
+        const data = await resp.json();
+
+        await loadImageIntoFrontend(data.image_id, data.metadata);
+
+        // Mark as composite and save the per-channel specs so we can re-render in JS
+        const composite = state.images[data.image_id];
+        if (composite) {
+            composite.isComposite = true;
+            composite.blendMode = blendMode;
+            composite.mergeSpecs = channels.map(c => {
+                const src = state.images[c.image_id];
+                const srcMax = (src && src.dataMax) ? src.dataMax : 255;
+                return {
+                    sourceId: c.image_id,
+                    channel: c.channel,
+                    weight: c.weight,
+                    clMin: 0,
+                    clMax: srcMax,
+                    dataMax: srcMax,
+                    gamma: 1.0,
+                    invert: false,
+                };
+            });
+        }
+
+        closeMergeModal();
+        syncControlsToActiveImage();
+        renderAll();
+
+    } catch (err) {
+        console.error('Merge failed:', err);
+        alert('Merge failed: ' + err.message);
+    }
+}
+
+// ===========================================================================
+//  Composite (merged image) — per-channel re-rendering
+// ===========================================================================
+
+// Channel routing identical to the backend ch_map
+const COMPOSITE_CH_MAP = {
+    red:     [1,0,0],
+    green:   [0,1,0],
+    blue:    [0,0,1],
+    cyan:    [0,1,1],
+    magenta: [1,0,1],
+    yellow:  [1,1,0],
+    gray:    [1,1,1],
+    white:   [1,1,1],
+};
+
+// Apply per-channel clMin/clMax/gamma/invert to a sample value (0..255)
+// Maps a raw pixel value (in the source's native range) through the per-channel
+// window/level + gamma + invert into the 0–255 display range.
+function applyChannelTransform(v, spec) {
+    const range = (spec.clMax - spec.clMin) || 1;
+    let x = ((v - spec.clMin) / range) * 255;
+    if (x < 0) x = 0; else if (x > 255) x = 255;
+    if (spec.gamma !== 1.0) {
+        x = Math.pow(x / 255, 1.0 / spec.gamma) * 255;
+    }
+    if (spec.invert) x = 255 - x;
+    return x;
+}
+
+// Render a composite image by combining its sources according to mergeSpecs.
+// Stores the result on img.originalImageData so the existing renderViewer pipeline picks it up.
+function renderCompositeIntoImage(img) {
+    if (!img || !img.isComposite || !img.mergeSpecs) return;
+
+    // Build a uniform reader for each source: returns {sw, sh, get(i)=>{r,g,b}}
+    // Values are returned in the source's NATIVE range so that applyChannelTransform
+    // (whose spec.clMin/clMax are also in native range) can do the windowing.
+    function buildReader(src) {
+        if (src && src.rawData) {
+            const raw = src.rawData;
+            if (raw.channels === 1) {
+                return { sw: raw.width, sh: raw.height, get: (i) => {
+                    const v = raw.data[i];
+                    return { r: v, g: v, b: v };
+                }};
+            }
+            return { sw: raw.width, sh: raw.height, get: (i) => {
+                const base = i * raw.channels;
+                return {
+                    r: raw.data[base],
+                    g: raw.channels > 1 ? raw.data[base + 1] : raw.data[base],
+                    b: raw.channels > 2 ? raw.data[base + 2] : raw.data[base],
+                };
+            }};
+        }
+        if (src && src.originalImageData) {
+            const sd = src.originalImageData.data;
+            return { sw: src.originalImageData.width, sh: src.originalImageData.height, get: (i) => {
+                const k = i * 4;
+                return { r: sd[k], g: sd[k + 1], b: sd[k + 2] };
+            }};
+        }
+        return null;
+    }
+
+    // Determine target size from the largest source; also ensure each spec's
+    // dataMax / clMin / clMax are in sync with the actual source bit depth.
+    let H = 0, W = 0;
+    const readers = [];
+    for (const spec of img.mergeSpecs) {
+        const src = state.images[spec.sourceId];
+        // Keep spec.dataMax in sync with the live source
+        if (src && src.dataMax && !spec.dataMax) {
+            spec.dataMax = src.dataMax;
+            if (spec.clMax <= 255 && spec.dataMax > 255) {
+                spec.clMin = Math.round(spec.clMin * spec.dataMax / 255);
+                spec.clMax = Math.round(spec.clMax * spec.dataMax / 255);
+            }
+        }
+        const rd = buildReader(src);
+        if (!rd) {
+            // Source not loaded — bail out and let the existing baked PNG remain
+            return;
+        }
+        readers.push(rd);
+        if (rd.sh > H) H = rd.sh;
+        if (rd.sw > W) W = rd.sw;
+    }
+    if (H === 0 || W === 0) return;
+
+    const blendMode = img.blendMode || 'additive';
+    const pxCount = W * H;
+
+    // For "max" mode we need per-layer arrays then combine. For "average" we need
+    // a per-pixel count of contributing layers. Allocate accordingly.
+    const useLayers = (blendMode === 'max' || blendMode === 'average');
+    const layers = useLayers ? [] : null;
+    const sumR = useLayers ? null : new Float32Array(pxCount);
+    const sumG = useLayers ? null : new Float32Array(pxCount);
+    const sumB = useLayers ? null : new Float32Array(pxCount);
+
+    img.mergeSpecs.forEach((spec, si) => {
+        const reader = readers[si];
+        const sw = reader.sw, sh = reader.sh;
+        const layerR = useLayers ? new Float32Array(pxCount) : null;
+        const layerG = useLayers ? new Float32Array(pxCount) : null;
+        const layerB = useLayers ? new Float32Array(pxCount) : null;
+
+        const isOriginal = (spec.channel === 'original' || spec.channel === 'none');
+        const m = COMPOSITE_CH_MAP[spec.channel] || [0,1,0];
+        const w = spec.weight;
+
+        for (let y = 0; y < sh; y++) {
+            for (let x = 0; x < sw; x++) {
+                const sIdx = y * sw + x;
+                const dIdx = y * W + x;
+                const px = reader.get(sIdx);
+                let rOut, gOut, bOut;
+                if (isOriginal) {
+                    // Preserve source RGB; transform each channel by per-spec window/level
+                    rOut = applyChannelTransform(px.r, spec) * w;
+                    gOut = applyChannelTransform(px.g, spec) * w;
+                    bOut = applyChannelTransform(px.b, spec) * w;
+                } else {
+                    // Average to gray, transform, then route into colored channels
+                    const gray = (px.r + px.g + px.b) / 3;
+                    const v = applyChannelTransform(gray, spec) * w;
+                    rOut = v * m[0]; gOut = v * m[1]; bOut = v * m[2];
+                }
+                if (useLayers) {
+                    layerR[dIdx] = rOut; layerG[dIdx] = gOut; layerB[dIdx] = bOut;
+                } else {
+                    sumR[dIdx] += rOut; sumG[dIdx] += gOut; sumB[dIdx] += bOut;
+                }
+            }
+        }
+        if (useLayers) layers.push({ r: layerR, g: layerG, b: layerB });
+    });
+
+    // Combine
+    const out = new Uint8ClampedArray(pxCount * 4);
+    if (blendMode === 'max') {
+        for (let i = 0; i < pxCount; i++) {
+            let r = 0, g = 0, b = 0;
+            for (const L of layers) {
+                if (L.r[i] > r) r = L.r[i];
+                if (L.g[i] > g) g = L.g[i];
+                if (L.b[i] > b) b = L.b[i];
+            }
+            out[i*4]   = Math.min(255, Math.round(r));
+            out[i*4+1] = Math.min(255, Math.round(g));
+            out[i*4+2] = Math.min(255, Math.round(b));
+            out[i*4+3] = 255;
+        }
+    } else if (blendMode === 'average') {
+        for (let i = 0; i < pxCount; i++) {
+            let r = 0, g = 0, b = 0, cR = 0, cG = 0, cB = 0;
+            for (const L of layers) {
+                r += L.r[i]; if (L.r[i] > 0) cR++;
+                g += L.g[i]; if (L.g[i] > 0) cG++;
+                b += L.b[i]; if (L.b[i] > 0) cB++;
+            }
+            r = r / Math.max(cR, 1);
+            g = g / Math.max(cG, 1);
+            b = b / Math.max(cB, 1);
+            out[i*4]   = Math.min(255, Math.round(r));
+            out[i*4+1] = Math.min(255, Math.round(g));
+            out[i*4+2] = Math.min(255, Math.round(b));
+            out[i*4+3] = 255;
+        }
+    } else {
+        // additive
+        for (let i = 0; i < pxCount; i++) {
+            out[i*4]   = Math.min(255, Math.round(sumR[i]));
+            out[i*4+1] = Math.min(255, Math.round(sumG[i]));
+            out[i*4+2] = Math.min(255, Math.round(sumB[i]));
+            out[i*4+3] = 255;
+        }
+    }
+
+    img.originalImageData = new ImageData(out, W, H);
+    img.width = W;
+    img.height = H;
+
+    // Once per-channel sliders drive the preview, we're rendering in 8-bit.
+    // Drop rawData and reset the dataMax so the main contrast slider /
+    // applyImageAdjustments path both use the 8-bit composite instead of
+    // the stale native-depth buffer loaded from the server.
+    if (img.rawData) {
+        img.rawData = null;
+        img.dataMax = 255;
+        if (img.adjustments) {
+            if (img.adjustments.clMin > 255) img.adjustments.clMin = 0;
+            if (img.adjustments.clMax > 255) img.adjustments.clMax = 255;
+        }
+        if (img.stats) {
+            img.stats = { p1: 0, p99: 255, min: 0, max: 255 };
+        }
+    }
+}
+
+// Build the per-channel adjustment UI for a composite image
+function buildChannelAdjustmentsPanel(img) {
+    const section = document.getElementById('channelAdjustmentsSection');
+    const container = document.getElementById('channelAdjRows');
+    if (!section || !container) return;
+
+    if (!img || !img.isComposite || !img.mergeSpecs) {
+        section.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    section.style.display = '';
+    container.innerHTML = '';
+
+    const channelOpts = [
+        {v: 'original', l: 'Original (No LUT)'},
+        {v: 'green', l: 'Green'}, {v: 'red', l: 'Red'}, {v: 'blue', l: 'Blue'},
+        {v: 'cyan', l: 'Cyan'}, {v: 'magenta', l: 'Magenta'}, {v: 'yellow', l: 'Yellow'},
+        {v: 'gray', l: 'Gray'}, {v: 'white', l: 'White'},
+    ];
+
+    img.mergeSpecs.forEach((spec, i) => {
+        const src = state.images[spec.sourceId];
+        const srcName = src ? src.name : `Channel ${i + 1}`;
+
+        // Always derive the native range from the actual source image so
+        // the sliders are correct even for old sessions / legacy mergeSpecs.
+        const liveDataMax = (src && src.dataMax) ? src.dataMax : (spec.dataMax || 255);
+        if (spec.dataMax !== liveDataMax) {
+            // Migrate legacy specs that were stuck at 0-255
+            if (spec.clMax <= 255 && liveDataMax > 255) {
+                spec.clMin = Math.round(spec.clMin * liveDataMax / 255);
+                spec.clMax = Math.round(spec.clMax * liveDataMax / 255);
+            }
+            spec.dataMax = liveDataMax;
+        }
+
+        const row = document.createElement('div');
+        row.style.cssText = 'border:1px solid var(--border); border-radius:6px; padding:8px;';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'font-size:12px; font-weight:600; margin-bottom:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        header.title = srcName;
+        header.textContent = `Ch ${i + 1}: ${srcName}`;
+        row.appendChild(header);
+
+        // Channel color selector
+        const chSel = document.createElement('select');
+        chSel.style.cssText = 'width:100%; margin-bottom:6px;';
+        channelOpts.forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt.v; o.textContent = opt.l;
+            if (opt.v === spec.channel) o.selected = true;
+            chSel.appendChild(o);
+        });
+        chSel.onchange = () => { spec.channel = chSel.value; reRenderComposite(img); };
+        row.appendChild(chSel);
+
+        // Helper to make a labeled slider
+        const mkSlider = (labelText, min, max, step, initial, valueFmt, onInput) => {
+            const grp = document.createElement('div');
+            grp.className = 'slider-group';
+            const lbl = document.createElement('label');
+            const val = document.createElement('span');
+            val.className = 'value';
+            val.textContent = valueFmt(initial);
+            lbl.textContent = labelText + ' ';
+            lbl.appendChild(val);
+            grp.appendChild(lbl);
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = String(min); slider.max = String(max); slider.step = String(step);
+            slider.value = String(initial);
+            slider.oninput = () => {
+                const v = parseFloat(slider.value);
+                val.textContent = valueFmt(v);
+                onInput(v);
+            };
+            grp.appendChild(slider);
+            return grp;
+        };
+
+        const srcDataMax = spec.dataMax;
+        const sliderStep = srcDataMax > 255 ? Math.max(1, Math.round(srcDataMax / 1000)) : 1;
+
+        row.appendChild(mkSlider('Contrast Min', 0, srcDataMax, sliderStep, spec.clMin,
+            v => Math.round(v),
+            v => { spec.clMin = v; if (spec.clMin > spec.clMax) spec.clMin = spec.clMax; reRenderComposite(img); }));
+
+        row.appendChild(mkSlider('Contrast Max', 0, srcDataMax, sliderStep, spec.clMax,
+            v => Math.round(v),
+            v => { spec.clMax = v; if (spec.clMax < spec.clMin) spec.clMax = spec.clMin; reRenderComposite(img); }));
+
+        row.appendChild(mkSlider('Gamma', 0.1, 5.0, 0.05, spec.gamma,
+            v => v.toFixed(2),
+            v => { spec.gamma = v; reRenderComposite(img); }));
+
+        row.appendChild(mkSlider('Weight', 0, 2, 0.05, spec.weight,
+            v => v.toFixed(2),
+            v => { spec.weight = v; reRenderComposite(img); }));
+
+        container.appendChild(row);
+    });
+}
+
+// Debounced re-render so dragging a slider stays responsive
+let _compositeRenderTimer = null;
+function reRenderComposite(img) {
+    if (_compositeRenderTimer) cancelAnimationFrame(_compositeRenderTimer);
+    _compositeRenderTimer = requestAnimationFrame(() => {
+        renderCompositeIntoImage(img);
+        renderViewer();
+    });
+}
+
+function resetCompositeChannels() {
+    const img = state.images[state.activeTab];
+    if (!img || !img.isComposite) return;
+    img.mergeSpecs.forEach(s => { s.clMin = 0; s.clMax = s.dataMax || 255; s.gamma = 1.0; s.invert = false; });
+    buildChannelAdjustmentsPanel(img);
+    reRenderComposite(img);
+}
+
+// ===========================================================================
+//  Export to PDF
+// ===========================================================================
+
+async function exportToPDF() {
+    if (typeof window.jspdf === 'undefined') {
+        alert('PDF library is still loading. Please wait a moment and try again.');
+        return;
+    }
+    const { jsPDF } = window.jspdf;
+
+    // Decide which images to export
+    let idsToExport;
+    if (state.activeViewTab !== 'grid' && state.images[state.activeViewTab]) {
+        idsToExport = [state.activeViewTab];
+    } else {
+        idsToExport = state.openTabs.filter(id => state.images[id]);
+    }
+    if (!idsToExport.length) {
+        alert('No visible images to export.');
+        return;
+    }
+
+    // Make sure all images have pixel data
+    await Promise.all(idsToExport.map(id => ensureImageLoaded(id)));
+
+    // Ask user for filename
+    const filename = window.prompt('Export filename:', 'lysa-export');
+    if (!filename) return;  // cancelled
+
+    // Ask user for layout preference
+    const layoutChoice = window.prompt(
+        'PDF layout:\n' +
+        '  1 = One image per page (full resolution)\n' +
+        '  2 = Grid (specify rows × columns per page)\n' +
+        'Enter 1 or 2:',
+        '1'
+    );
+    const gridMode = (layoutChoice && layoutChoice.trim() === '2');
+
+    let userCols = 0, userRows = 0;
+    if (gridMode) {
+        const colInput = window.prompt('Number of columns per page:', '2');
+        if (!colInput) return;
+        userCols = Math.max(1, parseInt(colInput, 10) || 2);
+        const rowInput = window.prompt('Number of rows per page:', '2');
+        if (!rowInput) return;
+        userRows = Math.max(1, parseInt(rowInput, 10) || 2);
+    }
+
+    // Render each image into an off-screen canvas at full resolution
+    function renderToCanvas(imgEntry) {
+        const adjusted = applyImageAdjustments(imgEntry);
+        const c = document.createElement('canvas');
+        c.width = adjusted.width;
+        c.height = adjusted.height;
+        c.getContext('2d').putImageData(adjusted, 0, 0);
+        return c;
+    }
+
+    // Gather rendered canvases
+    const items = idsToExport.map(id => {
+        const img = state.images[id];
+        return { id, name: img.name, canvas: renderToCanvas(img), w: img.width, h: img.height };
+    });
+
+    // DPI for converting pixels to mm (use 150 DPI so pages aren't enormous)
+    const DPI = 150;
+    const PX_TO_MM = 25.4 / DPI;
+
+    if (gridMode) {
+        // ---------- Grid mode: tile images with user-specified rows × cols per page ----------
+        const cols = userCols;
+        const rows = userRows;
+        const perPage = cols * rows;
+        const pageW = 297;  // A4 landscape mm
+        const pageH = 210;
+        const margin = 8;
+        const labelH = 4;
+        const cellW = (pageW - margin * 2) / cols;
+        const cellH = (pageH - margin * 2) / rows;
+
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        pdf.setFontSize(7);
+
+        items.forEach((item, idx) => {
+            // Add a new page when needed (not for the very first item)
+            if (idx > 0 && idx % perPage === 0) {
+                pdf.addPage('a4', 'landscape');
+            }
+            const posOnPage = idx % perPage;
+            const col = posOnPage % cols;
+            const row = Math.floor(posOnPage / cols);
+            const x = margin + col * cellW;
+            const y = margin + row * cellH;
+
+            // Fit image into cell preserving its actual aspect ratio
+            const availH = cellH - labelH - 2;
+            const scale = Math.min(cellW / item.w, availH / item.h);
+            const drawW = item.w * scale;
+            const drawH = item.h * scale;
+            const offsetX = x + (cellW - drawW) / 2;
+            const offsetY = y + (availH - drawH) / 2;
+
+            const dataUrl = item.canvas.toDataURL('image/png');
+            pdf.addImage(dataUrl, 'PNG', offsetX, offsetY, drawW, drawH);
+            // Label below image
+            pdf.text(item.name, x + cellW / 2, y + cellH - 1, { align: 'center' });
+        });
+
+        pdf.save(filename.replace(/\.pdf$/i, '') + '.pdf');
+    } else {
+        // ---------- One image per page, preserving each image's aspect ratio ----------
+        // Create the first page sized to the first image
+        const firstW = items[0].w * PX_TO_MM;
+        const firstH = items[0].h * PX_TO_MM;
+        const firstOrientation = firstW >= firstH ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({ orientation: firstOrientation, unit: 'mm', format: [Math.min(firstW, firstH), Math.max(firstW, firstH)] });
+
+        items.forEach((item, idx) => {
+            const imgW_mm = item.w * PX_TO_MM;
+            const imgH_mm = item.h * PX_TO_MM;
+            if (idx > 0) {
+                const orient = imgW_mm >= imgH_mm ? 'landscape' : 'portrait';
+                pdf.addPage([Math.min(imgW_mm, imgH_mm), Math.max(imgW_mm, imgH_mm)], orient);
+            }
+            const dataUrl = item.canvas.toDataURL('image/png');
+            pdf.addImage(dataUrl, 'PNG', 0, 0, imgW_mm, imgH_mm);
+        });
+
+        pdf.save(filename.replace(/\.pdf$/i, '') + '.pdf');
+    }
+}
+
+
+// ===========================================================================
+//  Session save/load
+// ===========================================================================
+
+// Build a JSON-serializable snapshot of the current session state
+function buildSessionState() {
+    const imagesPayload = {};
+    for (const [id, img] of Object.entries(state.images)) {
+        imagesPayload[id] = {
+            id,
+            name: img.name,
+            metadata: img.metadata,
+            adjustments: img.adjustments,
+            viewState: img.viewState || { zoom: 1, panX: 0, panY: 0 },
+            isComposite: !!img.isComposite,
+            blendMode: img.blendMode || null,
+            mergeSpecs: img.mergeSpecs || null,
+        };
+    }
+    return {
+        images: imagesPayload,
+        folders: state.folders,
+        openTabs: state.openTabs,
+        activeTab: state.activeTab,
+        parallelViews: state.parallelViews,
+        gridLayout: state.gridLayout,
+        viewTabs: state.viewTabs,
+        activeViewTab: state.activeViewTab,
+    };
+}
+
+async function saveSessionPrompt() {
+    let name;
+    if (state.loadedSessionName) {
+        // Offer to overwrite the current session or save as new
+        const choice = window.prompt(
+            `Current session: "${state.loadedSessionName}"\n\n` +
+            'Press OK to save over it, or type a new name to save as a copy:',
+            state.loadedSessionName
+        );
+        if (choice === null) return;  // cancelled
+        name = choice.trim() || state.loadedSessionName;
+    } else {
+        name = window.prompt('Save current session as:', 'session-' + new Date().toISOString().slice(0,10));
+        if (!name) return;
+    }
+    const sessionState = buildSessionState();
+    const imageRecords = Object.keys(state.images).map(id => ({ image_id: id }));
+    try {
+        const resp = await fetch(`${API}/api/sessions/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, state: sessionState, images: imageRecords }),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        state.loadedSessionName = data.name;
+        alert(`Session "${data.name}" saved (${data.image_count} images).`);
+    } catch (err) {
+        console.error(err);
+        alert('Save failed: ' + err.message);
+    }
+}
+
+async function openSessionLoadDialog() {
+    const modal = document.getElementById('loadSessionModal');
+    const container = document.getElementById('sessionListContainer');
+    modal.classList.add('active');
+    container.innerHTML = '<div style="color:var(--text-secondary); font-size:12px; padding:12px; text-align:center;">Loading sessions…</div>';
+    try {
+        const resp = await fetch(`${API}/api/sessions/list`);
+        const sessions = await resp.json();
+        if (!sessions.length) {
+            container.innerHTML = '<div style="color:var(--text-secondary); font-size:12px; padding:12px; text-align:center;">No saved sessions yet. Use "Save Session" to create one.</div>';
+            return;
+        }
+        container.innerHTML = '';
+        sessions.forEach(s => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:10px; border:1px solid var(--border); border-radius:6px; margin-bottom:6px;';
+            const info = document.createElement('div');
+            info.innerHTML = `<div style="font-weight:600; font-size:13px;">${s.name}</div>
+                <div style="font-size:11px; color:var(--text-secondary);">${s.saved_at} &middot; ${s.image_count} images</div>`;
+            row.appendChild(info);
+            const actions = document.createElement('div');
+            actions.style.cssText = 'display:flex; gap:6px;';
+            const loadBtn = document.createElement('button');
+            loadBtn.className = 'btn btn-sm btn-primary';
+            loadBtn.textContent = 'Load';
+            loadBtn.onclick = () => loadSession(s.name);
+            actions.appendChild(loadBtn);
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn btn-sm';
+            delBtn.textContent = 'Delete';
+            delBtn.onclick = async () => {
+                if (!confirm(`Delete session "${s.name}"?`)) return;
+                await fetch(`${API}/api/sessions/${encodeURIComponent(s.name)}`, { method: 'DELETE' });
+                openSessionLoadDialog();
+            };
+            actions.appendChild(delBtn);
+            row.appendChild(actions);
+            container.appendChild(row);
+        });
+    } catch (err) {
+        container.innerHTML = '<div style="color:#e74c3c; font-size:12px; padding:12px;">Error: ' + err.message + '</div>';
+    }
+}
+
+async function loadSession(name) {
+    try {
+        const resp = await fetch(`${API}/api/sessions/load/${encodeURIComponent(name)}`);
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        if (data.missing && data.missing.length) {
+            alert('Some images could not be restored:\n' + data.missing.map(m => m.name).join('\n'));
+        }
+        // Wipe current state
+        state.images = {};
+        state.folders = [];
+        state.openTabs = [];
+        state.activeTab = null;
+
+        const sessionState = data.state || {};
+        const imagesPayload = sessionState.images || {};
+        for (const [id, snap] of Object.entries(imagesPayload)) {
+            registerImageMetadata(id, snap.metadata);
+            const entry = state.images[id];
+            entry.adjustments = Object.assign(defaultAdjustments(), snap.adjustments || {});
+            // Mark adjustments as initialized so ensureImageLoaded doesn't
+            // overwrite the restored clMin/clMax with the image's default
+            // min/max range.
+            entry._adjustmentsInitialized = true;
+            entry.viewState = snap.viewState || { zoom: 1, panX: 0, panY: 0 };
+            if (snap.isComposite) {
+                entry.isComposite = true;
+                entry.blendMode = snap.blendMode || 'additive';
+                entry.mergeSpecs = snap.mergeSpecs || null;
+            }
+        }
+        // Restore folders, but drop any image references that no longer exist
+        state.folders = (sessionState.folders || []).map(f => ({
+            id: f.id || ('fld_' + Math.random().toString(36).slice(2, 10)),
+            name: f.name || 'Folder',
+            expanded: f.expanded !== false,
+            imageIds: (f.imageIds || []).filter(id => state.images[id]),
+        }));
+        // Re-sort alphabetically in case image names or order changed
+        state.folders.forEach(f => _sortFolderImageIds(f));
+
+        state.openTabs = (sessionState.openTabs || []).filter(id => state.images[id]);
+        state.activeTab = state.images[sessionState.activeTab] ? sessionState.activeTab : (state.openTabs[0] || null);
+        state.parallelViews = sessionState.parallelViews || Math.max(1, state.openTabs.length);
+        state.gridLayout = sessionState.gridLayout || 'auto';
+        document.getElementById('parallelViewCount').textContent = state.parallelViews;
+        document.getElementById('gridLayout').value = state.gridLayout;
+
+        // Load pixels for everything in the open tabs first
+        await Promise.all(state.openTabs.map(id => ensureImageLoaded(id)));
+
+        // For composites, also load their sources, then re-render with the saved per-channel adjustments
+        for (const id of Object.keys(state.images)) {
+            const img = state.images[id];
+            if (img.isComposite && img.mergeSpecs) {
+                await Promise.all(img.mergeSpecs.map(s => ensureImageLoaded(s.sourceId)));
+                renderCompositeIntoImage(img);
+            }
+        }
+
+        state.loadedSessionName = name;
+        document.getElementById('loadSessionModal').classList.remove('active');
+        renderAll();
+        // Push the restored contrast / adjustments back into the sidebar UI
+        syncControlsToActiveImage();
+    } catch (err) {
+        console.error(err);
+        alert('Load failed: ' + err.message);
+    }
+}
+
+// --- Override panel click in merge mode ---
+// We override renderParallelView and renderSidebar to handle merge-mode clicks
+
+const _origRenderParallelView = renderParallelView;
+renderParallelView = function(area) {
+    _origRenderParallelView(area);
+
+    if (state.mergeMode) {
+        area.querySelectorAll('.grid-cell').forEach(cell => {
+            const label = cell.querySelector('.grid-cell-label');
+            if (!label) return;
+            // Find which image this cell belongs to
+            const imgName = label.textContent;
+            const id = Object.keys(state.images).find(k => state.images[k].name === imgName);
+            if (!id) return;
+
+            cell.classList.add('merge-selectable');
+            if (state.mergeSelected.includes(id)) {
+                cell.classList.add('merge-selected');
+                const selIdx = state.mergeSelected.indexOf(id) + 1;
+                label.textContent = `[${selIdx}] ${imgName}`;
+            }
+            cell.onclick = (e) => {
+                e.stopPropagation();
+                mergeSelectImage(id);
+            };
+        });
+    }
+};
+
+const _origRenderSidebar = renderSidebar;
+renderSidebar = function() {
+    _origRenderSidebar();
+
+    if (state.mergeMode) {
+        document.querySelectorAll('.image-card').forEach(card => {
+            card.classList.add('merge-selectable');
+            // Extract image id from the thumbnail src
+            const thumbImg = card.querySelector('img');
+            if (!thumbImg) return;
+            const match = thumbImg.src.match(/\/api\/images\/([^/]+)\//);
+            if (!match) return;
+            const id = match[1];
+
+            if (state.mergeSelected.includes(id)) {
+                card.classList.add('merge-selected');
+            }
+            card.onclick = (e) => {
+                e.stopPropagation();
+                mergeSelectImage(id);
+            };
+        });
+    }
+};
+
+// Close modal on Escape, return to grid from image tab
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        if (document.getElementById('mergeModal').classList.contains('active')) {
+            closeMergeModal();
+        } else if (state.mergeMode) {
+            cancelMergeSelect();
+        } else if (state.activeViewTab !== 'grid') {
+            // Close current image tab and return to grid
+            closeViewTab(state.activeViewTab);
+        }
+    }
+});
+
+
+// ===========================================================================
+//  Sidebar resize
+// ===========================================================================
+(function setupSidebarResize() {
+    const sidebar = document.getElementById('sidebar');
+    const handle = document.getElementById('sidebarResizeHandle');
+    if (!sidebar || !handle) return;
+
+    const SIDEBAR_WIDTH_KEY = 'lysa.sidebarWidth';
+    const MIN = 180;
+    const MAX = 800;
+
+    function applyWidth(w) {
+        w = Math.max(MIN, Math.min(MAX, w));
+        sidebar.style.width = w + 'px';
+        sidebar.style.minWidth = w + 'px';
+        sidebar.classList.toggle('wide', w >= 320);
+    }
+
+    // Restore saved width
+    const saved = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY), 10);
+    if (Number.isFinite(saved)) applyWidth(saved);
+
+    let dragging = false;
+    handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        dragging = true;
+        handle.classList.add('active');
+        document.body.classList.add('resizing-sidebar');
+    });
+    window.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const rect = sidebar.getBoundingClientRect();
+        applyWidth(e.clientX - rect.left);
+    });
+    window.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('active');
+        document.body.classList.remove('resizing-sidebar');
+        const w = parseInt(sidebar.style.width, 10);
+        if (Number.isFinite(w)) localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
+    });
+})();
+
+
+// ===========================================================================
+//  Init
+// ===========================================================================
+
+renderViewer();
+
+// On startup, if no images are loaded, check for saved sessions and offer to load one
+(async () => {
+    if (Object.keys(state.images).length > 0) return;
+    try {
+        const resp = await fetch(`${API}/api/sessions/list`);
+        const sessions = await resp.json();
+        if (sessions.length > 0) {
+            openSessionLoadDialog();
+        }
+    } catch (e) { /* server may not be ready yet, ignore */ }
+})();
+</script>
+</body>
+</html>
