@@ -628,6 +628,10 @@
                 <br>Drop a folder here to load all images
             </div>
             <div style="margin-top:8px; display:flex; gap:4px;">
+                <button class="btn btn-sm" onclick="showFilePathDialog()" style="flex:1; font-size:11px;" title="Load images by file path (no copy)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Load Path
+                </button>
                 <button class="btn btn-sm" onclick="showFolderDialog()" style="flex:1; font-size:11px;" title="Load images from a server folder path">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                     Load Folder
@@ -636,6 +640,16 @@
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
                     Open LIF
                 </button>
+            </div>
+            <div class="file-path-dialog" id="filePathDialog" style="display:none; margin-top:8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; padding:8px;">
+                <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">File path(s) — one per line:</label>
+                <textarea id="filePathInput" rows="3" placeholder="/path/to/image1.tif&#10;/path/to/image2.tif" style="width:100%; box-sizing:border-box; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); padding:4px 6px; border-radius:4px; font-size:11px; font-family:monospace; resize:vertical;"></textarea>
+                <div style="font-size:10px; color:var(--text-secondary); margin:4px 0;">Images are loaded directly from disk — no copy is made.</div>
+                <div style="display:flex; gap:4px; margin-top:4px;">
+                    <button class="btn btn-sm btn-primary" onclick="loadFilePaths()" style="flex:1;">Load</button>
+                    <button class="btn btn-sm" onclick="document.getElementById('filePathDialog').style.display='none'">Cancel</button>
+                </div>
+                <div id="filePathStatus" style="font-size:10px; color:var(--text-secondary); margin-top:4px;"></div>
             </div>
             <div class="folder-dialog" id="folderDialog" style="display:none; margin-top:8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; padding:8px;">
                 <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:4px;">Folder path on server:</label>
@@ -2656,6 +2670,48 @@ document.addEventListener('keydown', e => {
 // ===========================================================================
 //  Folder Loading
 // ===========================================================================
+
+function showFilePathDialog() {
+    const dlg = document.getElementById('filePathDialog');
+    dlg.style.display = dlg.style.display === 'none' ? 'block' : 'none';
+    document.getElementById('filePathStatus').textContent = '';
+}
+
+async function loadFilePaths() {
+    const raw = document.getElementById('filePathInput').value.trim();
+    if (!raw) { alert('Enter at least one file path'); return; }
+    const paths = raw.split('\n').map(p => p.trim()).filter(Boolean);
+    const statusEl = document.getElementById('filePathStatus');
+    statusEl.textContent = `Loading 0/${paths.length}...`;
+
+    let loaded = 0, errors = 0;
+    for (const p of paths) {
+        try {
+            const resp = await fetch(`${API}/api/load-file`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: p }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) { errors++; continue; }
+            if (data.images) {
+                for (const item of data.images) {
+                    if (item.error) continue;
+                    registerImageMetadata(item.image_id, item.metadata);
+                }
+            } else if (data.image_id) {
+                registerImageMetadata(data.image_id, data.metadata);
+            }
+            loaded++;
+        } catch (err) {
+            errors++;
+        }
+        statusEl.textContent = `Loading ${loaded + errors}/${paths.length}...`;
+    }
+    statusEl.textContent = `Loaded ${loaded} images` + (errors > 0 ? ` (${errors} errors)` : '');
+    document.getElementById('filePathInput').value = '';
+    renderAll();
+}
 
 function showFolderDialog() {
     const dlg = document.getElementById('folderDialog');

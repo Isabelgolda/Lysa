@@ -258,6 +258,25 @@ async def delete_image(image_id: str):
     return {"status": "deleted"}
 
 
+class FileLoadParams(BaseModel):
+    path: str
+
+
+@app.post("/api/load-file")
+async def load_file(params: FileLoadParams):
+    """Load a single image by its path on disk — no copy into uploads/."""
+    allowed = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".lif"}
+    fp = Path(params.path)
+    if not fp.is_file():
+        raise HTTPException(400, f"File not found: {params.path}")
+    if fp.suffix.lower() not in allowed:
+        raise HTTPException(400, f"Unsupported format: {fp.suffix}")
+    if fp.suffix.lower() == ".lif":
+        lif_params = LifLoadParams(path=str(fp))
+        return await load_lif_file(lif_params)
+    return ingest_image(str(fp), fp.name)
+
+
 class FolderLoadParams(BaseModel):
     path: str
     pattern: Optional[str] = None  # e.g. "*ch00*" to filter
