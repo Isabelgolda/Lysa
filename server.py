@@ -308,12 +308,7 @@ async def load_folder(params: FolderLoadParams):
     for fp in files:
         if fp.is_file() and fp.suffix.lower() in allowed:
             try:
-                # Use path relative to the loaded folder so subfolder context is visible
-                try:
-                    display_name = str(fp.relative_to(folder))
-                except ValueError:
-                    display_name = fp.name
-                result = ingest_image(str(fp), display_name)
+                result = ingest_image(str(fp), fp.name)
                 results.append(result)
             except Exception as e:
                 results.append({"error": str(e), "filename": fp.name})
