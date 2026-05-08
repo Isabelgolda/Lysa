@@ -296,19 +296,24 @@ async def load_folder(params: FolderLoadParams):
     if not folder.is_dir():
         raise HTTPException(400, f"Not a valid directory: {params.path}")
 
-    allowed = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"}
+    allowed = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".lif"}
     results = []
 
-    # Collect matching files
+    # Collect matching files (recursive search into subdirectories)
     if params.pattern:
-        files = sorted(folder.glob(params.pattern))
+        files = sorted(folder.rglob(params.pattern))
     else:
-        files = sorted(folder.iterdir())
+        files = sorted(folder.rglob('*'))
 
     for fp in files:
         if fp.is_file() and fp.suffix.lower() in allowed:
             try:
-                result = ingest_image(str(fp), fp.name)
+                # Use path relative to the loaded folder so subfolder context is visible
+                try:
+                    display_name = str(fp.relative_to(folder))
+                except ValueError:
+                    display_name = fp.name
+                result = ingest_image(str(fp), display_name)
                 results.append(result)
             except Exception as e:
                 results.append({"error": str(e), "filename": fp.name})
