@@ -264,9 +264,12 @@ class FileLoadParams(BaseModel):
 
 @app.post("/api/load-file")
 async def load_file(params: FileLoadParams):
-    """Load a single image by its path on disk — no copy into uploads/."""
-    allowed = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".lif"}
+    """Load image(s) by path — accepts a single file or a folder."""
     fp = Path(params.path)
+    # If it's a directory, delegate to load-folder logic
+    if fp.is_dir():
+        return await load_folder(FolderLoadParams(path=params.path))
+    allowed = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".lif"}
     if not fp.is_file():
         raise HTTPException(400, f"File not found: {params.path}")
     if fp.suffix.lower() not in allowed:

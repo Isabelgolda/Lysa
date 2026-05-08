@@ -2695,18 +2695,20 @@ async function loadFilePaths() {
             const data = await resp.json();
             if (!resp.ok) { errors++; continue; }
             if (data.images) {
+                // Folder response — may contain many images
                 for (const item of data.images) {
-                    if (item.error) continue;
+                    if (item.error) { errors++; continue; }
                     registerImageMetadata(item.image_id, item.metadata);
+                    loaded++;
                 }
             } else if (data.image_id) {
                 registerImageMetadata(data.image_id, data.metadata);
+                loaded++;
             }
-            loaded++;
         } catch (err) {
             errors++;
         }
-        statusEl.textContent = `Loading ${loaded + errors}/${paths.length}...`;
+        statusEl.textContent = `Loading... ${loaded} images so far`;
     }
     statusEl.textContent = `Loaded ${loaded} images` + (errors > 0 ? ` (${errors} errors)` : '');
     document.getElementById('filePathInput').value = '';
